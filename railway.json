@@ -1,0 +1,16 @@
+{
+  "$schema": "https://railway.com/railway.schema.json",
+  "build": {
+    "builder": "RAILPACK",
+    "buildCommand": "bun run build",
+    "watchPatterns": ["apps/**", "packages/**", "railway.json", "railpack.json", "turbo.json"]
+  },
+  "deploy": {
+    "startCommand": "cd apps/web && bunx next start -p ${PORT}",
+    "sleepApplication": true,
+    "healthcheckPath": "/",
+    "healthcheckTimeout": 60,
+    "restartPolicyType": "ON_FAILURE",
+    "restartPolicyMaxRetries": 3
+  }
+}
