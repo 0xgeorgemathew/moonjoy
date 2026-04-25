@@ -1,0 +1,27 @@
+# General
+.env
+.env.*
+.DS_Store
+Thumbs.db
+*.log
+
+# Node
+node_modules/
+
+# Next.js
+.next/
+out/
+dist/
+.turbo/
+*.tsbuildinfo
+
+# Foundry / Solidity
+cache/
+broadcast/
+
+# IDE
+.vscode/
+.idea/
+
+# Tooling
+.kilo/
