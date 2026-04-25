@@ -23,5 +23,13 @@ broadcast/
 .vscode/
 .idea/
 
-# Tooling
+# AI Tooling
 .kilo/
+.kilocode/
+.agents/
+.claude/
+.playwright-mcp/
+
+# Other Tooling
+opencode.json
+skills-lock.json
