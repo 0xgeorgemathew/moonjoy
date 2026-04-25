@@ -1,0 +1,1116 @@
+@import "tailwindcss";
+
+:root {
+	/* Neobrutalism palette */
+	--neo-yellow: #FFE156;
+	--neo-purple: #C77DFF;
+	--neo-pink: #FF6B9D;
+	--neo-cyan: #4CC9F0;
+	--neo-green: #8EFF71;
+	--neo-bg: #FFF8E7;
+	--neo-card: #FFFFFF;
+	--neo-border: #000000;
+
+	--primary: #e8a623;
+	--primary-container: #2a1e08;
+
+	--secondary: #8fa0bc;
+	--secondary-container: #141c2c;
+	--on-secondary: #5f7390;
+
+	--surface: #07090f;
+	--surface-container-lowest: #0a0d15;
+	--surface-container-low: #0d1019;
+	--surface-container: #111420;
+	--surface-container-high: #161926;
+	--surface-variant: #1c1f30;
+
+	--on-surface: #e2e6f0;
+	--on-surface-variant: #7e8fa6;
+	--outline-variant: #3a4460;
+
+	--error: #f87171;
+
+	--shadow-dark: rgba(0, 0, 0, 0.65);
+	--shadow-light: rgba(255, 255, 255, 0.03);
+}
+
+@theme inline {
+	/* Neobrutalism color tokens */
+	--color-neo-yellow: var(--neo-yellow);
+	--color-neo-purple: var(--neo-purple);
+	--color-neo-pink: var(--neo-pink);
+	--color-neo-cyan: var(--neo-cyan);
+	--color-neo-green: var(--neo-green);
+	--color-neo-bg: var(--neo-bg);
+	--color-neo-card: var(--neo-card);
+
+	/* Color tokens */
+	--color-primary: var(--primary);
+	--color-primary-container: var(--primary-container);
+	--color-secondary: var(--secondary);
+	--color-secondary-container: var(--secondary-container);
+	--color-on-secondary: var(--on-secondary);
+	--color-surface: var(--surface);
+	--color-surface-container-lowest: var(--surface-container-lowest);
+	--color-surface-container-low: var(--surface-container-low);
+	--color-surface-container: var(--surface-container);
+	--color-surface-container-high: var(--surface-container-high);
+	--color-surface-variant: var(--surface-variant);
+	--color-on-surface: var(--on-surface);
+	--color-on-surface-variant: var(--on-surface-variant);
+	--color-outline-variant: var(--outline-variant);
+	--color-background: var(--surface);
+	--color-foreground: var(--on-surface);
+	--color-error: var(--error);
+
+	/* Font tokens */
+	--font-display: var(--font-display);
+	--font-body: var(--font-body);
+	--font-label: var(--font-label);
+
+	/* Animation tokens */
+	--animate-float: float 6s ease-in-out infinite;
+	--animate-spin-slow: spin-slow 60s linear infinite;
+	--animate-twinkle-1: twinkle-1 3s ease-in-out infinite;
+	--animate-twinkle-2: twinkle-2 4.3s ease-in-out infinite;
+	--animate-twinkle-3: twinkle-3 2.7s ease-in-out infinite;
+	--animate-twinkle-4: twinkle-4 5.1s ease-in-out infinite;
+	--animate-twinkle-5: twinkle-5 3.8s ease-in-out infinite;
+	--animate-twinkle-6: twinkle-6 4.7s ease-in-out infinite;
+	--animate-glow-pulse: glow-pulse 2.5s ease-in-out infinite;
+	--animate-fade-in-up: fade-in-up 0.8s ease-out forwards;
+	--animate-spaceship-fly: spaceship-fly 16s cubic-bezier(0.37, 0, 0.63, 1)
+		infinite;
+	--animate-engine-flicker: engine-flicker 0.15s ease-in-out infinite alternate;
+	--animate-neu-glow: neu-glow 4s ease-in-out infinite;
+}
+
+@layer utilities {
+	.animate-fade-in-up {
+		animation: var(--animate-fade-in-up);
+	}
+	.animate-float {
+		animation: var(--animate-float);
+	}
+	.animate-twinkle-1 {
+		animation: var(--animate-twinkle-1);
+	}
+	.animate-twinkle-2 {
+		animation: var(--animate-twinkle-2);
+	}
+	.animate-twinkle-3 {
+		animation: var(--animate-twinkle-3);
+	}
+	.animate-twinkle-4 {
+		animation: var(--animate-twinkle-4);
+	}
+	.animate-twinkle-5 {
+		animation: var(--animate-twinkle-5);
+	}
+	.animate-twinkle-6 {
+		animation: var(--animate-twinkle-6);
+	}
+}
+
+body {
+	background: var(--surface);
+	color: var(--on-surface);
+	font-family: var(--font-body), sans-serif;
+}
+
+.safe-area-wrapper {
+	box-sizing: border-box;
+	padding: env(safe-area-inset-top) env(safe-area-inset-right)
+		env(safe-area-inset-bottom) env(safe-area-inset-left);
+	width: 100%;
+}
+
+.neu-raised {
+	background: var(--surface);
+	border-radius: 28px;
+	box-shadow:
+		10px 10px 20px var(--shadow-dark),
+		-10px -10px 20px var(--shadow-light);
+}
+
+.neu-raised-sm {
+	background: var(--surface);
+	border-radius: 16px;
+	box-shadow:
+		6px 6px 12px var(--shadow-dark),
+		-6px -6px 12px var(--shadow-light);
+}
+
+.neu-inset {
+	background: var(--surface);
+	border-radius: 16px;
+	box-shadow:
+		inset 6px 6px 12px var(--shadow-dark),
+		inset -6px -6px 12px var(--shadow-light);
+}
+
+.neu-convex {
+	background: linear-gradient(145deg, #0d0f16, #090b10);
+	border-radius: 28px;
+	box-shadow:
+		10px 10px 20px var(--shadow-dark),
+		-10px -10px 20px var(--shadow-light);
+}
+
+.neu-btn {
+	background: var(--surface);
+	border-radius: 14px;
+	box-shadow:
+		7px 7px 14px var(--shadow-dark),
+		-7px -7px 14px var(--shadow-light);
+	transition:
+		box-shadow 0.15s ease,
+		transform 0.1s ease;
+}
+
+.neu-btn:focus-visible {
+	outline: 2px solid var(--primary);
+	outline-offset: 2px;
+}
+
+.neu-btn:active {
+	box-shadow:
+		inset 4px 4px 8px var(--shadow-dark),
+		inset -4px -4px 8px var(--shadow-light);
+	transform: scale(0.98);
+}
+
+.neu-btn-primary {
+	background: linear-gradient(145deg, #2a1e08, #1a1204);
+	border-radius: 14px;
+	box-shadow:
+		7px 7px 14px var(--shadow-dark),
+		-7px -7px 14px var(--shadow-light),
+		0 0 25px rgba(232, 166, 35, 0.12);
+	color: var(--primary);
+	transition:
+		box-shadow 0.15s ease,
+		transform 0.1s ease;
+}
+
+.neu-btn-primary:active {
+	box-shadow:
+		inset 4px 4px 8px rgba(0, 0, 0, 0.5),
+		inset -4px -4px 8px rgba(232, 166, 35, 0.05);
+	transform: scale(0.98);
+}
+
+.neu-badge {
+	background: var(--surface);
+	border-radius: 9999px;
+	box-shadow:
+		4px 4px 8px var(--shadow-dark),
+		-4px -4px 8px var(--shadow-light);
+}
+
+.neu-badge-primary {
+	background: linear-gradient(145deg, #2a1e08, #1a1204);
+	border-radius: 9999px;
+	box-shadow:
+		4px 4px 8px var(--shadow-dark),
+		-4px -4px 8px var(--shadow-light);
+	color: var(--primary);
+}
+
+.neu-icon-well {
+	background: var(--surface);
+	border-radius: 14px;
+	box-shadow:
+		inset 3px 3px 6px var(--shadow-dark),
+		inset -3px -3px 6px var(--shadow-light);
+	color: var(--primary);
+}
+
+/* ===== Keyframes ===== */
+
+@keyframes float {
+	0%,
+	100% {
+		transform: translateY(0);
+	}
+	50% {
+		transform: translateY(-14px);
+	}
+}
+
+@keyframes spin-slow {
+	from {
+		transform: rotate(0deg);
+	}
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+@keyframes twinkle-1 {
+	0%, 100% { opacity: 0.3; }
+	50% { opacity: 1; }
+}
+
+@keyframes twinkle-2 {
+	0%, 100% { opacity: 0.6; }
+	50% { opacity: 0.1; }
+}
+
+@keyframes twinkle-3 {
+	0%, 100% { opacity: 0.15; }
+	45% { opacity: 0.9; }
+}
+
+@keyframes twinkle-4 {
+	0%, 100% { opacity: 0.5; }
+	40% { opacity: 0.2; }
+}
+
+@keyframes twinkle-5 {
+	0%, 100% { opacity: 0.2; }
+	55% { opacity: 0.85; }
+}
+
+@keyframes twinkle-6 {
+	0%, 100% { opacity: 0.7; }
+	35% { opacity: 0.15; }
+}
+
+@keyframes glow-pulse {
+	0%,
+	100% {
+		box-shadow:
+			7px 7px 14px var(--shadow-dark),
+			-7px -7px 14px var(--shadow-light),
+			0 0 20px 4px rgb(232 166 35 / 0.15);
+	}
+	50% {
+		box-shadow:
+			7px 7px 14px var(--shadow-dark),
+			-7px -7px 14px var(--shadow-light),
+			0 0 32px 8px rgb(232 166 35 / 0.35);
+	}
+}
+
+@keyframes fade-in-up {
+	from {
+		opacity: 0;
+		transform: translateY(20px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes pulse-dot {
+	0%,
+	100% {
+		opacity: 1;
+		box-shadow: 0 0 0 0 rgba(232 166 35 / 0.4);
+	}
+	50% {
+		opacity: 0.8;
+		box-shadow: 0 0 8px 4px rgba(232 166 35 / 0.2);
+	}
+}
+
+@keyframes neu-glow {
+	0%,
+	100% {
+		box-shadow:
+			10px 10px 20px var(--shadow-dark),
+			-10px -10px 20px var(--shadow-light),
+			0 0 0 transparent;
+	}
+	50% {
+		box-shadow:
+			10px 10px 20px var(--shadow-dark),
+			-10px -10px 20px var(--shadow-light),
+			0 0 35px rgba(232, 166, 35, 0.06);
+	}
+}
+
+.animate-pulse-dot {
+	animation: pulse-dot 2s ease-in-out infinite;
+}
+
+/* ===== Moon Hero Visuals ===== */
+
+.moon-glow {
+	border-radius: 50%;
+	filter: drop-shadow(0 0 18px rgba(200 210 230 / 0.15))
+		drop-shadow(0 0 50px rgba(180 195 220 / 0.08))
+		drop-shadow(0 0 90px rgba(232, 166, 35 / 0.04));
+}
+
+.realistic-moon {
+	width: 220px;
+	height: 220px;
+	border-radius: 50%;
+	background-image: url("/moon-texture.png");
+	background-size: 200% 100%;
+	/* Match Moon Joy aesthetic */
+	background-color: #b5bbc8;
+	background-blend-mode: multiply;
+	/* Simulating a 3D sphere with inset shadows */
+	box-shadow:
+		inset -30px 0 50px rgba(8, 15, 24, 0.85),
+		inset 10px 0 20px rgba(248, 249, 255, 0.4),
+		inset 0 0 10px rgba(248, 249, 255, 0.2);
+	/* The rotation animation */
+	animation: spin-planet 40s linear infinite;
+	/* Tilted axis */
+}
+
+@keyframes spin-planet {
+	0% {
+		background-position: 0% 0;
+	}
+	100% {
+		background-position: 200% 0;
+	}
+}
+
+.earth {
+	width: clamp(92px, 14vw, 160px);
+	height: clamp(92px, 14vw, 160px);
+	border-radius: 50%;
+	box-shadow:
+		0 0 22px 6px rgba(100 180 255 / 0.1),
+		0 0 52px 14px rgba(100 180 255 / 0.05);
+}
+
+.moon-hero {
+	width: clamp(200px, 30vw, 300px);
+	height: clamp(200px, 30vw, 300px);
+	border-radius: 50%;
+	box-shadow:
+		0 0 32px 10px rgba(200 210 230 / 0.12),
+		0 0 72px 20px rgba(180 195 220 / 0.08);
+}
+
+.stars-1 {
+	width: 1px;
+	height: 1px;
+	border-radius: 50%;
+	background: transparent;
+	box-shadow:
+		2vw 3vh 0 0.5px rgba(255 255 255 / 0.5),
+		7vw 7vh 0 0.5px rgba(255 255 255 / 0.3),
+		13vw 2vh 0 0.5px rgba(255 236 210 / 0.4),
+		17vw 11vh 0 0.5px rgba(201 210 234 / 0.5),
+		21vw 18vh 0 0.5px rgba(255 255 255 / 0.3),
+		26vw 5vh 0 1px rgba(255 255 255 / 0.6),
+		30vw 14vh 0 0.5px rgba(255 236 210 / 0.4),
+		34vw 22vh 0 0.5px rgba(255 255 255 / 0.5),
+		38vw 9vh 0 0.5px rgba(201 210 234 / 0.3),
+		42vw 28vh 0 0.5px rgba(255 255 255 / 0.4),
+		46vw 16vh 0 0.5px rgba(255 236 210 / 0.5),
+		50vw 35vh 0 0.5px rgba(255 255 255 / 0.3),
+		54vw 20vh 0 1px rgba(255 255 255 / 0.5),
+	58vw 40vh 0 0.5px rgba(201 210 234 / 0.4),
+	62vw 25vh 0 0.5px rgba(255 255 255 / 0.4),
+	66vw 44vh 0 0.5px rgba(255 236 210 / 0.3),
+	70vw 30vh 0 0.5px rgba(255 255 255 / 0.5),
+		74vw 50vh 0 0.5px rgba(201 210 234 / 0.4),
+		78vw 18vh 0 0.5px rgba(255 255 255 / 0.3),
+		82vw 55vh 0 1px rgba(255 255 255 / 0.6),
+		86vw 38vh 0 0.5px rgba(255 236 210 / 0.4),
+		90vw 60vh 0 0.5px rgba(255 255 255 / 0.4),
+		94vw 42vh 0 0.5px rgba(201 210 234 / 0.3),
+		98vw 48vh 0 0.5px rgba(255 255 255 / 0.5),
+		3vw 65vh 0 0.5px rgba(255 236 210 / 0.4),
+		9vw 70vh 0 0.5px rgba(255 255 255 / 0.3),
+		14vw 75vh 0 0.5px rgba(201 210 234 / 0.5),
+		19vw 80vh 0 1px rgba(255 255 255 / 0.4),
+		23vw 68vh 0 0.5px rgba(255 236 210 / 0.3),
+		28vw 85vh 0 0.5px rgba(255 255 255 / 0.5),
+		33vw 72vh 0 0.5px rgba(201 210 234 / 0.4),
+		37vw 90vh 0 0.5px rgba(255 255 255 / 0.3),
+		41vw 78vh 0 0.5px rgba(255 236 210 / 0.4),
+		45vw 95vh 0 0.5px rgba(255 255 255 / 0.5),
+		49vw 62vh 0 0.5px rgba(201 210 234 / 0.3),
+		53vw 88vh 0 1px rgba(255 255 255 / 0.6),
+		57vw 55vh 0 0.5px rgba(255 236 210 / 0.4),
+		61vw 98vh 0 0.5px rgba(255 255 255 / 0.3),
+		65vw 65vh 0 0.5px rgba(201 210 234 / 0.4),
+		69vw 82vh 0 0.5px rgba(255 255 255 / 0.5),
+		73vw 92vh 0 0.5px rgba(255 236 210 / 0.3),
+		77vw 58vh 0 0.5px rgba(255 255 255 / 0.4),
+	81vw 75vh 0 1px rgba(255 255 255 / 0.5),
+		85vw 95vh 0 0.5px rgba(201 210 234 / 0.3),
+		89vw 68vh 0 0.5px rgba(255 236 210 / 0.4),
+		93vw 85vh 0 0.5px rgba(255 255 255 / 0.3),
+		97vw 52vh 0 0.5px rgba(201 210 234 / 0.5),
+		5vw 42vh 0 0.5px rgba(255 255 255 / 0.4),
+		11vw 98vh 0 0.5px rgba(255 236 210 / 0.3),
+		16vw 35vh 0 0.5px rgba(255 255 255 / 0.5),
+		20vw 58vh 0 0.5px rgba(201 210 234 / 0.4),
+		25vw 48vh 0 0.5px rgba(255 255 255 / 0.3),
+	29vw 82vh 0 1px rgba(255 255 255 / 0.4),
+		33vw 55vh 0 0.5px rgba(255 236 210 / 0.5),
+		39vw 8vh 0 0.5px rgba(201 210 234 / 0.3),
+		43vw 72vh 0 0.5px rgba(255 255 255 / 0.4),
+		47vw 38vh 0 0.5px rgba(255 236 210 / 0.3),
+		51vw 92vh 0 0.5px rgba(255 255 255 / 0.5),
+		55vw 15vh 0 1px rgba(255 255 255 / 0.6),
+		59vw 45vh 0 0.5px rgba(201 210 234 / 0.4),
+		63vw 28vh 0 0.5px rgba(255 255 255 / 0.3),
+		67vw 75vh 0 0.5px rgba(255 236 210 / 0.4),
+	71vw 10vh 0 0.5px rgba(255 255 255 / 0.5),
+	75vw 88vh 0 0.5px rgba(201 210 234 / 0.3),
+		79vw 62vh 0 0.5px rgba(255 236 210 / 0.4),
+	83vw 5vh 0 0.5px rgba(255 255 255 / 0.3),
+		87vw 35vh 0 0.5px rgba(201 210 234 / 0.5),
+		91vw 78vh 0 0.5px rgba(255 255 255 / 0.4),
+	95vw 22vh 0 1px rgba(255 255 255 / 0.5),
+		99vw 98vh 0 0.5px rgba(201 210 234 / 0.3);
+}
+
+.stars-2 {
+	width: 1px;
+	height: 1px;
+	border-radius: 50%;
+	background: transparent;
+	box-shadow:
+		1vw 6vh 0 0.5px rgba(255 236 210 / 0.35),
+		6vw 95vh 0 0.5px rgba(255 255 255 / 0.45),
+		11vw 40vh 0 0.5px rgba(201 210 234 / 0.3),
+		16vw 22vh 0 0.5px rgba(255 255 255 / 0.5),
+		21vw 88vh 0 1px rgba(255 236 210 / 0.3),
+		26vw 52vh 0 0.5px rgba(255 255 255 / 0.4),
+		31vw 15vh 0 0.5px rgba(201 210 234 / 0.5),
+		36vw 70vh 0 0.5px rgba(255 255 255 / 0.3),
+		41vw 33vh 0 0.5px rgba(255 236 210 / 0.4),
+		46vw 8vh 0 0.5px rgba(255 255 255 / 0.5),
+		51vw 62vh 0 1px rgba(201 210 234 / 0.3),
+		56vw 85vh 0 0.5px rgba(255 255 255 / 0.4),
+		61vw 48vh 0 0.5px rgba(255 236 210 / 0.3),
+		66vw 28vh 0 0.5px rgba(255 255 255 / 0.5),
+		71vw 75vh 0 0.5px rgba(201 210 234 / 0.3),
+		76vw 58vh 0 0.5px rgba(255 255 255 / 0.4),
+		81vw 95vh 0 1px rgba(255 236 210 / 0.3),
+		86vw 42vh 0 0.5px rgba(255 255 255 / 0.5),
+		91vw 15vh 0 0.5px rgba(201 210 234 / 0.4),
+		96vw 68vh 0 0.5px rgba(255 255 255 / 0.3),
+		3vw 82vh 0 0.5px rgba(255 236 210 / 0.35),
+		8vw 18vh 0 0.5px rgba(255 255 255 / 0.45),
+		13vw 55vh 0 0.5px rgba(201 210 234 / 0.3),
+	18vw 98vh 0 0.5px rgba(255 255 255 / 0.5),
+		23vw 35vh 0 0.5px rgba(255 236 210 / 0.3),
+		28vw 72vh 0 0.5px rgba(255 255 255 / 0.4),
+		33vw 12vh 0 0.5px rgba(201 210 234 / 0.5),
+		38vw 45vh 0 0.5px rgba(255 255 255 / 0.5),
+		43vw 92vh 0 1px rgba(255 236 210 / 0.3),
+		48vw 28vh 0 0.5px rgba(255 255 255 / 0.4),
+		53vw 65vh 0 0.5px rgba(201 210 234 / 0.3),
+		58vw 78vh 0 0.5px rgba(255 255 255 / 0.4),
+		63vw 52vh 0 0.5px rgba(255 236 210 / 0.3),
+	68vw 15vh 0 0.5px rgba(255 255 255 / 0.5),
+		73vw 88vh 0 0.5px rgba(201 210 234 / 0.3),
+		78vw 40vh 0 0.5px rgba(255 255 255 / 0.4),
+		83vw 8vh 0 0.5px rgba(255 236 210 / 0.35),
+		88vw 72vh 0 1px rgba(255 236 210 / 0.3),
+		93vw 55vh 0 0.5px rgba(255 255 255 / 0.5),
+	98vw 32vh 0 0.5px rgba(201 210 234 / 0.3);
+}
+
+.stars-3 {
+	width: 1px;
+	height: 1px;
+	border-radius: 50%;
+	background: transparent;
+	box-shadow:
+		4vw 90vh 0 0.5px rgba(255 236 210 / 0.4),
+		9vw 45vh 0 0.5px rgba(255 255 255 / 0.3),
+	14vw 20vh 0 0.5px rgba(201 210 234 / 0.5),
+	19vw 98vh 0 0.5px rgba(255 255 255 / 0.4),
+		24vw 62vh 0 0.5px rgba(255 236 210 / 0.3),
+	29vw 35vh 0 0.5px rgba(255 255 255 / 0.5),
+	34vw 80vh 0 0.5px rgba(201 210 234 / 0.4),
+	39vw 15vh 0 0.5px rgba(255 255 255 / 0.3),
+		44vw 52vh 0 0.5px rgba(255 236 210 / 0.4),
+		49vw 88vh 0 1px rgba(255 255 255 / 0.5),
+		54vw 70vh 0 0.5px rgba(201 210 234 / 0.3),
+	59vw 42vh 0 0.5px rgba(255 255 255 / 0.4),
+	64vw 25vh 0 0.5px rgba(255 236 210 / 0.3),
+	69vw 95vh 0 0.5px rgba(255 255 255 / 0.5),
+	74vw 10vh 0 0.5px rgba(201 210 234 / 0.4),
+	79vw 58vh 0 0.5px rgba(255 255 255 / 0.3),
+	84vw 78vh 0 0.5px rgba(255 236 210 / 0.4),
+	89vw 35vh 0 0.5px rgba(255 255 255 / 0.5),
+		94vw 48vh 0 0.5px rgba(201 210 234 / 0.3),
+	99vw 68vh 0 0.5px rgba(255 255 255 / 0.4),
+		3vw 52vh 0 0.5px rgba(255 236 210 / 0.4),
+	8vw 85vh 0 0.5px rgba(255 255 255 / 0.3),
+	13vw 30vh 0 0.5px rgba(201 210 234 / 0.5),
+	18vw 75vh 0 0.5px rgba(255 255 255 / 0.4),
+	23vw 12vh 0 0.5px rgba(255 236 210 / 0.3),
+	28vw 98vh 0 0.5px rgba(255 255 255 / 0.5),
+	33vw 55vh 0 0.5px rgba(201 210 234 / 0.3),
+		38vw 40vh 0 0.5px rgba(255 255 255 / 0.4),
+	43vw 68vh 0 0.5px rgba(255 236 210 / 0.3),
+	48vw 85vh 0 1px rgba(255 255 255 / 0.5),
+	53vw 22vh 0 0.5px rgba(255 255 255 / 0.4),
+	58vw 48vh 0 0.5px rgba(201 210 234 / 0.3),
+	63vw 92vh 0 0.5px rgba(255 255 255 / 0.4),
+	68vw 5vh 0 0.5px rgba(255 236 210 / 0.3),
+	73vw 60vh 0 0.5px rgba(255 255 255 / 0.5),
+	78vw 35vh 0 0.5px rgba(201 210 234 / 0.4),
+	83vw 72vh 0 0.5px rgba(255 255 255 / 0.3),
+	88vw 98vh 0 0.5px rgba(255 236 210 / 0.4),
+	93vw 40vh 0 0.5px rgba(255 255 255 / 0.5),
+	98vw 15vh 0 0.5px rgba(201 210 234 / 0.3);
+}
+
+.stars-4 {
+	width: 1px;
+	height: 1px;
+	border-radius: 50%;
+	background: transparent;
+	box-shadow:
+		2vw 48vh 0 0.5px rgba(255 236 210 / 0.3),
+		7vw 82vh 0 0.5px rgba(255 255 255 / 0.5),
+	12vw 15vh 0 0.5px rgba(201 210 234 / 0.4),
+	17vw 58vh 0 0.5px rgba(255 255 255 / 0.3),
+	22vw 92vh 0 0.5px rgba(255 236 210 / 0.4),
+	27vw 38vh 0 0.5px rgba(255 255 255 / 0.5),
+	32vw 75vh 0 0.5px rgba(201 210 234 / 0.3),
+	37vw 5vh 0 0.5px rgba(255 255 255 / 0.4),
+	42vw 68vh 0 0.5px rgba(255 236 210 / 0.3),
+	47vw 95vh 0 0.5px rgba(255 255 255 / 0.5),
+	52vw 28vh 0 0.5px rgba(201 210 234 / 0.4),
+	57vw 50vh 0 0.5px rgba(255 255 255 / 0.3),
+	62vw 88vh 0 0.5px rgba(255 236 210 / 0.4),
+	67vw 22vh 0 0.5px rgba(255 255 255 / 0.5),
+	72vw 65vh 0 0.5px rgba(201 210 234 / 0.3),
+	77vw 98vh 0 0.5px rgba(255 255 255 / 0.4),
+	82vw 40vh 0 0.5px rgba(255 236 210 / 0.3),
+	87vw 75vh 0 0.5px rgba(255 255 255 / 0.5),
+	92vw 52vh 0 0.5px rgba(201 210 234 / 0.4),
+	97vw 18vh 0 0.5px rgba(255 255 255 / 0.3),
+	3vw 35vh 0 0.5px rgba(255 236 210 / 0.4),
+	8vw 68vh 0 0.5px rgba(255 255 255 / 0.5),
+	13vw 92vh 0 0.5px rgba(201 210 234 / 0.3),
+	18vw 55vh 0 0.5px rgba(255 255 255 / 0.3),
+	23vw 8vh 0 0.5px rgba(255 236 210 / 0.4),
+	28vw 42vh 0 0.5px rgba(255 255 255 / 0.5),
+	33vw 98vh 0 0.5px rgba(201 210 234 / 0.3),
+	38vw 30vh 0 0.5px rgba(255 255 255 / 0.4),
+	43vw 72vh 0 0.5px rgba(255 236 210 / 0.3),
+	48vw 15vh 0 0.5px rgba(255 255 255 / 0.5),
+	53vw 82vh 0 0.5px rgba(255 255 255 / 0.4),
+	58vw 45vh 0 0.5px rgba(201 210 234 / 0.3),
+	63vw 78vh 0 0.5px rgba(255 255 255 / 0.4),
+	68vw 52vh 0 0.5px rgba(255 236 210 / 0.3),
+	73vw 35vh 0 0.5px rgba(255 255 255 / 0.5),
+	78vw 92vh 0 0.5px rgba(255 255 255 / 0.3),
+	83vw 60vh 0 0.5px rgba(255 236 210 / 0.4),
+	88vw 85vh 0 0.5px rgba(255 255 255 / 0.5),
+	93vw 42vh 0 0.5px rgba(201 210 234 / 0.3),
+	98vw 70vh 0 0.5px rgba(255 255 255 / 0.4);
+}
+
+.stars-5 {
+	width: 1px;
+	height: 1px;
+	border-radius: 50%;
+	background: transparent;
+	box-shadow:
+		4vw 25vh 0 0.5px rgba(255 236 210 / 0.5),
+		9vw 70vh 0 0.5px rgba(255 255 255 / 0.3),
+		14vw 48vh 0 0.5px rgba(201 210 234 / 0.4),
+	19vw 85vh 0 0.5px rgba(255 255 255 / 0.3),
+	24vw 15vh 0 0.5px rgba(255 236 210 / 0.4),
+		29vw 58vh 0 0.5px rgba(255 255 255 / 0.5),
+	34vw 92vh 0 0.5px rgba(201 210 234 / 0.3),
+		39vw 38vh 0 0.5px rgba(255 255 255 / 0.4),
+	44vw 75vh 0 0.5px rgba(255 236 210 / 0.3),
+	49vw 52vh 0 0.5px rgba(255 255 255 / 0.5),
+	54vw 85vh 0 0.5px rgba(201 210 234 / 0.4),
+	59vw 22vh 0 0.5px rgba(255 255 255 / 0.3),
+		64vw 65vh 0 0.5px rgba(255 255 255 / 0.4),
+		69vw 40vh 0 0.5px rgba(255 236 210 / 0.3),
+		74vw 98vh 0 0.5px rgba(255 255 255 / 0.5),
+	79vw 10vh 0 0.5px rgba(201 210 234 / 0.4),
+		84vw 55vh 0 0.5px rgba(255 255 255 / 0.3),
+		89vw 80vh 0 0.5px rgba(255 236 210 / 0.4),
+	94vw 35vh 0 0.5px rgba(255 255 255 / 0.5),
+	99vw 72vh 0 0.5px rgba(201 210 234 / 0.4),
+		3vw 95vh 0 0.5px rgba(255 236 210 / 0.3),
+		8vw 42vh 0 0.5px rgba(255 255 255 / 0.5),
+	13vw 68vh 0 0.5px rgba(201 210 234 / 0.3),
+	18vw 32vh 0 0.5px rgba(255 255 255 / 0.4),
+	23vw 98vh 0 0.5px rgba(255 236 210 / 0.3),
+	28vw 55vh 0 0.5px rgba(255 255 255 / 0.5),
+	33vw 15vh 0 0.5px rgba(201 210 234 / 0.4),
+		38vw 72vh 0 0.5px rgba(255 255 255 / 0.3),
+	43vw 40vh 0 0.5px rgba(255 236 210 / 0.4),
+	48vw 88vh 0 0.5px rgba(255 255 255 / 0.5),
+	53vw 25vh 0 0.5px rgba(255 255 255 / 0.4),
+	58vw 62vh 0 0.5px rgba(201 210 234 / 0.3),
+	63vw 48vh 0 0.5px rgba(255 255 255 / 0.4),
+	68vw 80vh 0 0.5px rgba(255 236 210 / 0.3),
+	73vw 52vh 0 0.5px rgba(255 255 255 / 0.5),
+	78vw 28vh 0 0.5px rgba(201 210 234 / 0.4),
+	83vw 78vh 0 0.5px rgba(255 255 255 / 0.3),
+	88vw 42vh 0 0.5px rgba(255 236 210 / 0.4),
+	93vw 60vh 0 0.5px rgba(255 255 255 / 0.5),
+	98vw 15vh 0 0.5px rgba(201 210 234 / 0.3);
+}
+
+.stars-6 {
+	width: 1px;
+	height: 1px;
+	border-radius: 50%;
+	background: transparent;
+	box-shadow:
+		2vw 80vh 0 0.5px rgba(255 236 210 / 0.35),
+	7vw 45vh 0 0.5px rgba(255 255 255 / 0.45),
+		12vw 72vh 0 0.5px rgba(201 210 234 / 0.3),
+	17vw 28vh 0 0.5px rgba(255 255 255 / 0.5),
+	22vw 55vh 0 0.5px rgba(255 236 210 / 0.3),
+	27vw 88vh 0 0.5px rgba(255 255 255 / 0.4),
+	32vw 18vh 0 0.5px rgba(201 210 234 / 0.5),
+	37vw 65vh 0 0.5px rgba(255 255 255 / 0.3),
+	42vw 82vh 0 0.5px rgba(255 236 210 / 0.4),
+	47vw 40vh 0 0.5px rgba(255 255 255 / 0.5),
+	52vw 98vh 0 0.5px rgba(201 210 234 / 0.3),
+	57vw 35vh 0 0.5px rgba(255 255 255 / 0.4),
+		62vw 75vh 0 0.5px rgba(255 236 210 / 0.3),
+	67vw 10vh 0 0.5px rgba(255 255 255 / 0.5),
+	72vw 58vh 0 0.5px rgba(201 210 234 / 0.4),
+	77vw 82vh 0 0.5px rgba(255 255 255 / 0.3),
+	82vw 30vh 0 0.5px rgba(255 236 210 / 0.4),
+	87vw 92vh 0 0.5px rgba(255 255 255 / 0.5),
+	92vw 68vh 0 0.5px rgba(255 255 255 / 0.3),
+	97vw 48vh 0 0.5px rgba(255 255 255 / 0.4),
+	3vw 15vh 0 0.5px rgba(255 236 210 / 0.35),
+	8vw 98vh 0 0.5px rgba(255 255 255 / 0.3),
+	13vw 62vh 0 0.5px rgba(201 210 234 / 0.5),
+	18vw 45vh 0 0.5px rgba(255 255 255 / 0.4),
+	23vw 78vh 0 0.5px rgba(255 236 210 / 0.3),
+	28vw 30vh 0 0.5px rgba(255 255 255 / 0.5),
+	33vw 98vh 0 0.5px rgba(201 210 234 / 0.3),
+	38vw 55vh 0 0.5px rgba(255 255 255 / 0.4),
+	43vw 15vh 0 0.5px rgba(255 236 210 / 0.3),
+	48vw 70vh 0 0.5px rgba(255 255 255 / 0.5),
+	53vw 88vh 0 0.5px rgba(255 255 255 / 0.4),
+	58vw 42vh 0 0.5px rgba(201 210 234 / 0.3),
+	63vw 25vh 0 0.5px rgba(255 255 255 / 0.4),
+	68vw 52vh 0 0.5px rgba(255 236 210 / 0.3),
+	73vw 95vh 0 0.5px rgba(255 255 255 / 0.5),
+	78vw 75vh 0 0.5px rgba(201 210 234 / 0.4),
+	83vw 48vh 0 0.5px rgba(255 255 255 / 0.3),
+	88vw 15vh 0 0.5px rgba(255 236 210 / 0.4),
+	93vw 82vh 0 0.5px rgba(255 255 255 / 0.5),
+	98vw 35vh 0 0.5px rgba(201 210 234 / 0.3);
+}
+
+.challenge-btn {
+	background: linear-gradient(145deg, #2a1e08, #1a1204);
+	color: var(--primary);
+	font-family: var(--font-display), sans-serif;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.2em;
+	border-radius: 14px;
+	box-shadow:
+		7px 7px 14px var(--shadow-dark),
+		-7px -7px 14px var(--shadow-light),
+		0 0 25px rgba(232, 166, 35, 0.12);
+	transition:
+		box-shadow 0.15s ease,
+		transform 0.1s ease;
+}
+
+.challenge-btn:focus-visible {
+	outline: 2px solid var(--primary);
+	outline-offset: 2px;
+}
+
+.challenge-btn:active {
+	box-shadow:
+		inset 4px 4px 8px rgba(0, 0, 0, 0.5),
+		inset -4px -4px 8px rgba(232, 166, 35, 0.05);
+	transform: scale(0.98);
+}
+
+.challenge-btn.is-visible {
+	animation: glow-pulse 2.5s ease-in-out infinite;
+}
+
+.btn-primary {
+	background: linear-gradient(145deg, #2a1e08, #1a1204);
+	color: var(--primary);
+	font-family: var(--font-display), sans-serif;
+	border-radius: 14px;
+	box-shadow:
+		7px 7px 14px var(--shadow-dark),
+		-7px -7px 14px var(--shadow-light),
+		0 0 25px rgba(232, 166, 35, 0.12);
+	transition:
+		box-shadow 0.15s ease,
+		transform 0.1s ease;
+}
+
+.btn-primary:focus-visible {
+	outline: 2px solid var(--primary);
+	outline-offset: 2px;
+}
+
+.btn-primary:active {
+	box-shadow:
+		inset 4px 4px 8px rgba(0, 0, 0, 0.5),
+		inset -4px -4px 8px rgba(232, 166, 35, 0.05);
+	transform: scale(0.98);
+}
+
+.btn-secondary {
+	background: var(--surface);
+	color: var(--on-surface);
+	font-family: var(--font-display), sans-serif;
+	border-radius: 14px;
+	box-shadow:
+		7px 7px 14px var(--shadow-dark),
+		-7px -7px 14px var(--shadow-light);
+	transition:
+		box-shadow 0.15s ease,
+		transform 0.1s ease;
+}
+
+.btn-secondary:focus-visible {
+	outline: 2px solid var(--primary);
+	outline-offset: 2px;
+}
+
+.btn-secondary:active {
+	box-shadow:
+		inset 4px 4px 8px var(--shadow-dark),
+		inset -4px -4px 8px var(--shadow-light);
+	transform: scale(0.98);
+}
+
+/* ===== Spaceship Trajectory ===== */
+
+.spaceship-trajectory {
+	z-index: 1;
+}
+
+.trajectory-ribbon-glow {
+	opacity: 0.8;
+}
+
+.trajectory-ribbon-glow--outbound {
+	filter: drop-shadow(0 0 18px rgba(247, 238, 124, 0.16));
+}
+
+.trajectory-ribbon-glow--return {
+	filter: drop-shadow(0 0 18px rgba(145, 242, 255, 0.18));
+}
+
+.trajectory-ribbon {
+	opacity: 0.96;
+}
+
+.trajectory-ribbon--outbound {
+	filter: drop-shadow(0 0 10px rgba(247, 238, 124, 0.16));
+}
+
+.trajectory-ribbon--return {
+	filter: drop-shadow(0 0 10px rgba(145, 242, 255, 0.18));
+}
+
+.spaceship-on-path {
+	position: absolute;
+	top: 0;
+	left: 0;
+	z-index: 10;
+	filter: drop-shadow(0 0 4px rgba(200, 210, 230, 0.42))
+		drop-shadow(0 0 18px rgba(232, 166, 35, 0.18));
+	transform-origin: center;
+	will-change: transform;
+}
+
+.spaceship-svg {
+	display: block;
+}
+
+/*
+ * Engine flame — flicker + burn-phase visibility.
+ * Burn schedule follows the visible motion beats on the 28s loop:
+ *   launch + Earth departure  : ON
+ *   open-space coast          : OFF
+ *   lunar turn + moon exit    : ON
+ *   return + recovery         : OFF
+ * See spaceship-trajectory.tsx SEGMENTS array for authoritative timing.
+ */
+.engine-flame {
+	transform-box: fill-box;
+	transform-origin: center top;
+	animation: engine-flicker 0.18s ease-in-out infinite alternate;
+	opacity: 0;
+	transition: opacity 220ms ease;
+}
+
+/* Visible plume pulsation — noticeable size change on every cycle. */
+@keyframes engine-flicker {
+	0% {
+		transform: scaleY(0.7) scaleX(0.85);
+	}
+	100% {
+		transform: scaleY(1.3) scaleX(1.15);
+	}
+}
+
+.ship-windows {
+	animation: window-pulse 3s ease-in-out infinite;
+}
+
+@keyframes window-pulse {
+	0%,
+	100% {
+		opacity: 0.85;
+	}
+	50% {
+		opacity: 1;
+	}
+}
+
+/* ===== Glass Bars ===== */
+
+.glass-bar {
+	background: rgb(7 9 15 / 0.85);
+	backdrop-filter: blur(20px);
+	-webkit-backdrop-filter: blur(20px);
+}
+
+.glass-header {
+	background: rgb(7 9 15 / 0.8);
+	backdrop-filter: blur(16px);
+	-webkit-backdrop-filter: blur(16px);
+}
+
+/* ===== Gold Glow Border ===== */
+
+.gold-glow-border {
+	box-shadow:
+		0 0 0 1px rgb(232 166 35 / 0.25),
+		0 0 20px -4px rgb(232 166 35 / 0.1);
+}
+
+.gold-glow-border-strong {
+	box-shadow:
+		0 0 0 1px rgb(232 166 35 / 0.4),
+		0 0 30px -4px rgb(232 166 35 / 0.2);
+}
+
+/* ===== Arena Utilities ===== */
+
+@keyframes timer-urgent {
+	0%,
+	100% {
+		opacity: 1;
+	}
+	50% {
+		opacity: 0.5;
+	}
+}
+
+@keyframes trade-enter {
+	from {
+		opacity: 0;
+		transform: translateY(8px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+.arena-timer-urgent {
+	animation: timer-urgent 1s ease-in-out infinite;
+}
+
+.arena-trade-enter {
+	animation: trade-enter 0.35s ease-out forwards;
+}
+
+.arena-role-badge {
+	border-radius: 4px;
+	padding: 1px 5px;
+	font-family: var(--font-label), sans-serif;
+	font-size: 8px;
+	font-weight: 600;
+	text-transform: uppercase;
+	letter-spacing: 0.15em;
+	line-height: 1.6;
+}
+
+.arena-role-badge-creator {
+	background: var(--primary-container);
+	color: var(--primary);
+}
+
+.arena-role-badge-opponent {
+	background: var(--surface-variant);
+	color: var(--on-surface-variant);
+}
+
+.arena-spread-bar {
+	height: 6px;
+	border-radius: 9999px;
+	background: var(--surface-variant);
+	overflow: hidden;
+	position: relative;
+}
+
+.arena-spread-fill {
+	height: 100%;
+	background: var(--primary);
+	border-radius: 9999px;
+	transition: width 0.5s ease-out;
+}
+
+.arena-spread-fill-from-right {
+	margin-left: auto;
+}
+
+.arena-status-dot {
+	width: 6px;
+	height: 6px;
+	border-radius: 50%;
+	flex-shrink: 0;
+}
+
+.arena-status-dot-connected {
+	background: var(--primary);
+	animation: pulse-dot 2s ease-in-out infinite;
+}
+
+.arena-status-dot-disconnected {
+	background: var(--on-surface-variant);
+	opacity: 0.3;
+}
+
+/* ===== Neobrutalism Utilities ===== */
+
+.neo-btn {
+	background: var(--neo-yellow);
+	color: #000;
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	border: 3px solid #000;
+	border-radius: 12px;
+	box-shadow: 6px 6px 0 0 #000;
+	transition:
+		transform 0.1s ease,
+		box-shadow 0.1s ease;
+}
+
+.neo-btn:hover {
+	transform: translate(2px, 2px);
+	box-shadow: 4px 4px 0 0 #000;
+}
+
+.neo-btn:active {
+	transform: translate(6px, 6px);
+	box-shadow: 0 0 0 0 #000;
+}
+
+.neo-btn:focus-visible {
+	outline: 3px solid var(--neo-purple);
+	outline-offset: 2px;
+}
+
+.neo-btn-secondary {
+	background: #fff;
+	color: #000;
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	border: 3px solid #000;
+	border-radius: 12px;
+	box-shadow: 6px 6px 0 0 #000;
+	transition:
+		transform 0.1s ease,
+		box-shadow 0.1s ease;
+}
+
+.neo-btn-secondary:hover {
+	transform: translate(2px, 2px);
+	box-shadow: 4px 4px 0 0 #000;
+}
+
+.neo-btn-secondary:active {
+	transform: translate(6px, 6px);
+	box-shadow: 0 0 0 0 #000;
+}
+
+.neo-btn-secondary:focus-visible {
+	outline: 3px solid var(--neo-cyan);
+	outline-offset: 2px;
+}
+
+.neo-card {
+	background: var(--neo-card);
+	border: 3px solid #000;
+	border-radius: 16px;
+	box-shadow: 6px 6px 0 0 #000;
+}
+
+.neo-badge {
+	border: 2px solid #000;
+	border-radius: 8px;
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: 0.15em;
+	padding: 6px 16px;
+}
+
+.neo-well {
+	background: #f0ebe0;
+	border: 2px solid #000;
+	border-radius: 10px;
+}
+
+.neo-well-alt {
+	background: var(--neo-cyan);
+	border: 2px solid #000;
+	border-radius: 10px;
+}
+
+/* ===== Neo-Brutalist Hero Panel ===== */
+
+.neo-panel {
+	background: var(--neo-card);
+	border: 5px solid #000;
+	border-radius: 20px;
+	box-shadow: 12px 12px 0 0 #000;
+}
+
+.neo-divider {
+	border: none;
+	border-top: 3px dashed #000;
+	opacity: 0.35;
+	margin: 0;
+}
+
+.neo-stat {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	border: 2px solid #000;
+	border-radius: 8px;
+	padding: 5px 12px;
+	font-family: var(--font-label), sans-serif;
+	font-size: 11px;
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: 0.12em;
+	background: #fff;
+}
