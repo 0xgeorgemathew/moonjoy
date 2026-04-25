@@ -96,8 +96,11 @@ export function TabBar() {
 		return null;
 	}
 
+	const activeStyle = "bg-artemis-red text-white font-extrabold shadow-[3px_3px_0_0_#1565C0] border-2 border-black -translate-y-0.5";
+	const inactiveStyle = "text-gray-500 hover:text-black hover:bg-gray-100";
+
 	return (
-		<nav className="fixed bottom-0 left-0 right-0 z-50 bg-neo-card border-t-[4px] border-black shadow-[0_-6px_0_0_#000]">
+		<nav className="fixed bottom-0 left-0 right-0 z-50 bg-neo-card border-t-[4px] border-black shadow-[0_-6px_0_0_#1565C0]">
 			<div className="mx-auto flex h-16 max-w-md items-center justify-around px-2 pb-[env(safe-area-inset-bottom)]">
 				{tabs.map((tab) => {
 					const active = isActive(pathname, tab);
@@ -105,11 +108,7 @@ export function TabBar() {
 						<Link
 							key={tab.label}
 							href={tab.href}
-							className={`relative flex min-h-12 min-w-12 flex-col items-center justify-center gap-0.5 rounded-xl px-3 transition-all ${
-								active
-									? "bg-neo-yellow text-black font-extrabold shadow-[3px_3px_0_0_#000] border-2 border-black -translate-y-0.5"
-									: "text-gray-500 hover:text-black hover:bg-gray-100"
-							}`}
+							className={`relative flex min-h-12 min-w-12 flex-col items-center justify-center gap-0.5 rounded-xl px-3 transition-all ${active ? activeStyle : inactiveStyle}`}
 						>
 							{tab.icon}
 							<span className={`font-label text-[9px] uppercase tracking-[0.18em] ${active ? "font-bold" : ""}`}>

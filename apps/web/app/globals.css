@@ -1,22 +1,29 @@
 @import "tailwindcss";
 
 :root {
-	/* Neobrutalism palette */
+	/* Artemis-derived palette */
+	--artemis-red: #E53935;
+	--artemis-red-light: #EF5350;
+	--artemis-blue: #1565C0;
+	--artemis-blue-light: #1E88E5;
+	--artemis-charcoal: #455A64;
+	--artemis-silver: #90A4AE;
+
+	/* Neobrutalism palette — Artemis edition */
 	--neo-yellow: #FFE156;
 	--neo-purple: #C77DFF;
 	--neo-pink: #FF6B9D;
-	--neo-cyan: #4CC9F0;
-	--neo-green: #8EFF71;
+	--neo-cyan: var(--artemis-blue-light);
+	--neo-green: var(--artemis-red);
 	--neo-bg: #FFF8E7;
 	--neo-card: #FFFFFF;
 	--neo-border: #000000;
 
-	--primary: #e8a623;
-	--primary-container: #2a1e08;
-
-	--secondary: #8fa0bc;
-	--secondary-container: #141c2c;
-	--on-secondary: #5f7390;
+	--primary: var(--artemis-red);
+	--primary-container: #2a0d0c;
+	--secondary: var(--artemis-blue-light);
+	--secondary-container: #0c1929;
+	--on-secondary: var(--artemis-blue);
 
 	--surface: #07090f;
 	--surface-container-lowest: #0a0d15;
@@ -31,7 +38,7 @@
 
 	--error: #f87171;
 
-	--shadow-dark: rgba(0, 0, 0, 0.65);
+	--shadow-dark: rgba(21, 101, 192, 0.55);
 	--shadow-light: rgba(255, 255, 255, 0.03);
 }
 
@@ -44,6 +51,12 @@
 	--color-neo-green: var(--neo-green);
 	--color-neo-bg: var(--neo-bg);
 	--color-neo-card: var(--neo-card);
+
+	/* Artemis color tokens */
+	--color-artemis-red: var(--artemis-red);
+	--color-artemis-blue: var(--artemis-blue);
+	--color-artemis-charcoal: var(--artemis-charcoal);
+	--color-artemis-silver: var(--artemis-silver);
 
 	/* Color tokens */
 	--color-primary: var(--primary);
@@ -996,17 +1009,17 @@ body {
 	opacity: 0.3;
 }
 
-/* ===== Neobrutalism Utilities ===== */
+/* ===== Neobrutalism Utilities — Artemis Edition ===== */
 
 .neo-btn {
-	background: var(--neo-yellow);
-	color: #000;
+	background: var(--artemis-red);
+	color: #fff;
 	font-weight: 800;
 	text-transform: uppercase;
 	letter-spacing: 0.08em;
 	border: 3px solid #000;
 	border-radius: 12px;
-	box-shadow: 6px 6px 0 0 #000;
+	box-shadow: 6px 6px 0 0 var(--artemis-blue);
 	transition:
 		transform 0.1s ease,
 		box-shadow 0.1s ease;
@@ -1014,28 +1027,28 @@ body {
 
 .neo-btn:hover {
 	transform: translate(2px, 2px);
-	box-shadow: 4px 4px 0 0 #000;
+	box-shadow: 4px 4px 0 0 var(--artemis-blue);
 }
 
 .neo-btn:active {
 	transform: translate(6px, 6px);
-	box-shadow: 0 0 0 0 #000;
+	box-shadow: 0 0 0 0 var(--artemis-blue);
 }
 
 .neo-btn:focus-visible {
-	outline: 3px solid var(--neo-purple);
+	outline: 3px solid var(--artemis-blue);
 	outline-offset: 2px;
 }
 
 .neo-btn-secondary {
 	background: #fff;
-	color: #000;
+	color: var(--artemis-charcoal);
 	font-weight: 800;
 	text-transform: uppercase;
 	letter-spacing: 0.08em;
 	border: 3px solid #000;
 	border-radius: 12px;
-	box-shadow: 6px 6px 0 0 #000;
+	box-shadow: 6px 6px 0 0 var(--artemis-blue);
 	transition:
 		transform 0.1s ease,
 		box-shadow 0.1s ease;
@@ -1043,16 +1056,16 @@ body {
 
 .neo-btn-secondary:hover {
 	transform: translate(2px, 2px);
-	box-shadow: 4px 4px 0 0 #000;
+	box-shadow: 4px 4px 0 0 var(--artemis-blue);
 }
 
 .neo-btn-secondary:active {
 	transform: translate(6px, 6px);
-	box-shadow: 0 0 0 0 #000;
+	box-shadow: 0 0 0 0 var(--artemis-blue);
 }
 
 .neo-btn-secondary:focus-visible {
-	outline: 3px solid var(--neo-cyan);
+	outline: 3px solid var(--artemis-blue);
 	outline-offset: 2px;
 }
 
@@ -1060,7 +1073,7 @@ body {
 	background: var(--neo-card);
 	border: 3px solid #000;
 	border-radius: 16px;
-	box-shadow: 6px 6px 0 0 #000;
+	box-shadow: 6px 6px 0 0 var(--artemis-blue);
 }
 
 .neo-badge {
@@ -1070,6 +1083,8 @@ body {
 	text-transform: uppercase;
 	letter-spacing: 0.15em;
 	padding: 6px 16px;
+	background: var(--artemis-red);
+	color: #fff;
 }
 
 .neo-well {
@@ -1079,23 +1094,24 @@ body {
 }
 
 .neo-well-alt {
-	background: var(--neo-cyan);
+	background: var(--artemis-blue-light);
 	border: 2px solid #000;
 	border-radius: 10px;
+	color: #fff;
 }
 
-/* ===== Neo-Brutalist Hero Panel ===== */
+/* ===== Neo-Brutalist Hero Panel — Artemis Edition ===== */
 
 .neo-panel {
 	background: var(--neo-card);
 	border: 5px solid #000;
 	border-radius: 20px;
-	box-shadow: 12px 12px 0 0 #000;
+	box-shadow: 12px 12px 0 0 var(--artemis-blue);
 }
 
 .neo-divider {
 	border: none;
-	border-top: 3px dashed #000;
+	border-top: 3px dashed var(--artemis-charcoal);
 	opacity: 0.35;
 	margin: 0;
 }
@@ -1113,4 +1129,5 @@ body {
 	text-transform: uppercase;
 	letter-spacing: 0.12em;
 	background: #fff;
+	color: var(--artemis-charcoal);
 }

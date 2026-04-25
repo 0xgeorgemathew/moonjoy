@@ -1,6 +1,5 @@
 import type { Metadata, Viewport } from "next";
 import { Space_Grotesk, Manrope, Inter } from "next/font/google";
-import { TabBar } from "@/components/tab-bar";
 import "./globals.css";
 
 const spaceGrotesk = Space_Grotesk({
@@ -49,12 +48,9 @@ export default function RootLayout({
           content="black-translucent"
         />
       </head>
-      <body className="min-h-[100dvh] flex flex-col">
-        <div className="safe-area-wrapper flex min-h-0 flex-1 flex-col">
-          <div className="flex min-h-0 flex-1 flex-col">
-            {children}
-          </div>
-          <TabBar />
+      <body className="min-h-[100dvh] bg-surface">
+        <div className="safe-area-wrapper flex h-[100dvh]">
+          {children}
         </div>
       </body>
     </html>
