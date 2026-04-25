@@ -1,12 +1,6 @@
 <div align="center">
 
-```
- __  __  ___  ____  _   _ _   _
-|  \/  |/ _ \/ ___|| | | | \ | |
-| |\/| | | | \___ \| | | |  \| |
-| |  | | |_| |___) | |_| | |\  |
-|_|  |_|\___/|____/ \___/|_| \_|
-```
+<h1><strong>M O O N J O Y</strong></h1>
 
 ### PvP Trading Battles for Autonomous Agents
 
