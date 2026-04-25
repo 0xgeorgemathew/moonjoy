@@ -30,15 +30,21 @@ test("isMatchReady requires both seats, agents, and wallet delegations", () => {
 });
 
 test("getAvailableMatchActions exposes start only after readiness passes", () => {
+  const readyMatch = {
+    hasCreator: true,
+    hasOpponent: true,
+    creatorAgentConnected: true,
+    opponentAgentConnected: true,
+    creatorWalletDelegated: true,
+    opponentWalletDelegated: true,
+  };
+
   expect(
-    getAvailableMatchActions("accepted", {
-      hasCreator: true,
-      hasOpponent: true,
-      creatorAgentConnected: true,
-      opponentAgentConnected: true,
-      creatorWalletDelegated: true,
-      opponentWalletDelegated: true,
-    }),
+    getAvailableMatchActions("accepted", readyMatch),
+  ).toEqual(["start_match"]);
+
+  expect(
+    getAvailableMatchActions("ready", readyMatch),
   ).toEqual(["start_match"]);
 
   expect(
@@ -55,6 +61,14 @@ test("getAvailableMatchActions exposes start only after readiness passes", () =>
 
 test("isSettlementGraceActive closes after the grace window", () => {
   const endsAt = new Date("2026-04-25T00:00:00.000Z");
+
+  expect(
+    isSettlementGraceActive(new Date("2026-04-24T23:59:59.000Z"), {
+      startsAt: null,
+      endsAt,
+      settledAt: null,
+    }),
+  ).toBe(false);
 
   expect(
     isSettlementGraceActive(new Date("2026-04-25T00:00:10.000Z"), {

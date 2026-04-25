@@ -52,7 +52,12 @@ export function getAvailableMatchActions(
   status: MatchStatus,
   readiness: MatchReadiness,
 ): MatchAction[] {
-  if (status === "draft" || status === "open" || status === "accepted") {
+  if (
+    status === "draft" ||
+    status === "open" ||
+    status === "accepted" ||
+    status === "ready"
+  ) {
     const actions: MatchAction[] = [];
 
     if (!readiness.creatorAgentConnected || !readiness.opponentAgentConnected) {
@@ -83,6 +88,10 @@ export function getAvailableMatchActions(
 
 export function isSettlementGraceActive(now: Date, timing: MatchTiming): boolean {
   if (!timing.endsAt || timing.settledAt) {
+    return false;
+  }
+
+  if (now.getTime() < timing.endsAt.getTime()) {
     return false;
   }
 
