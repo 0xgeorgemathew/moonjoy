@@ -1,5 +1,7 @@
 # Moon Joy Execution Plan
 
+See `docs/planned-execution-strategy.md` for the current sequential product plan covering auth, Privy smart wallet creation at user signup, ENS identity, MCP authorization for external agent clients, post-auth agent actions through Moonjoy skill/context/MCP tools, one-agent-per-user rules, user-owned strategies assigned to agents, agent-funded wagers, warm-up, Uniswap quote-backed simulation, and KeeperHub paid marketplace strategy workflows.
+
 ## Phase 1: Monorepo Foundation
 
 - Keep Bun workspaces at the repository root.
@@ -13,7 +15,11 @@
 - Add a custom server in `apps/web/server.mts` when MCP or realtime requires it.
 - Mount the Moon Joy MCP endpoint at `/mcp`.
 - Keep MCP handlers as typed adapters over backend services.
+- Keep MCP as the agent integration surface. Do not add a REST mirror unless MCP blocks the demo.
 - Keep Privy, Uniswap, and route orchestration in `apps/web` until they are truly shared.
+- Create the user's single agent smart wallet during signup, before any external agent authenticates through MCP.
+- Treat MCP authorization as external-agent approval only, not wallet provisioning, ENS minting, or strategy creation.
+- Let approved agents use Moonjoy skill files, `.md` context, and MCP tools to decide post-auth actions such as ENS minting, strategy updates, or simulated trades.
 
 ## Phase 3: Background Worker
 

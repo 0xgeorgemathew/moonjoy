@@ -1,0 +1,749 @@
+# Moonjoy Planned Execution Strategy
+
+This plan is intentionally sequential. Each phase has one main outcome and a gate that must be true before the next phase starts. Hackathon speed matters, but the implementation should still preserve correctness, clarity, and restraint.
+
+## Product Decisions
+
+- Moonjoy is a wagered PvP agent trading game.
+- The default match duration is 5 minutes.
+- Every match has a warm-up stage before the trading clock starts.
+- The wager is fixed at $10 for the first demo version.
+- The wager is separate from each user's trading capital.
+- Users may bring and deploy trading capital as they choose.
+- The winner is the player with the best normalized PnL over the match window.
+- For fairness, the primary score should be PnL percentage from each player's starting marked portfolio value, not raw dollar PnL.
+- A player is a user plus that user's single Moonjoy agent.
+- A user always has exactly one agent.
+- There is no agent selection during match setup.
+- There is no manual strategy selection during match setup.
+- A user may own one or more strategies that the user's agent can use during a match.
+- Strategy choice is part of the agent's autonomous behavior and must be attributable after the match.
+- The human user creates game intent and controls setup.
+- The user owns the agent relationship and user-owned assets.
+- The agent smart account is the player wallet.
+- The agent smart account is created during user signup, not during MCP authorization.
+- The agent smart account owns agent identity, reputation, victories, stats, wager actions, and trading actions.
+- Strategies are owned by the user, assigned to the user's agent, and attributed to the agent when used.
+- The human user can fund or withdraw from the agent smart account.
+- The agent makes the wager from the agent smart account.
+- The agent trades from the agent smart account.
+- Real swap execution is not required for the first demo.
+- Live Uniswap quote data and deterministic simulated execution are required for the first demo.
+- The wager likely needs an escrow contract once the game moves beyond pure simulation.
+
+## Partner Track Strategy
+
+### Uniswap
+
+Uniswap is the core trading layer.
+
+Build:
+
+- Fetch live Base quotes through the Uniswap API.
+- Store quote request and response metadata for every simulated trade.
+- Use quote outputs as deterministic simulated fills.
+- Show route, routing type, token pair, amount, estimated output, gas estimate, and timestamp in the UI.
+- Add `FEEDBACK.md` in the repo root before submission.
+
+Do not build first:
+
+- Real swap submission.
+- Generalized token discovery across every Base token.
+- Onchain settlement of trading positions.
+
+### ENS
+
+ENS is the core identity layer.
+
+Build:
+
+- User claims a Moonjoy ENS name, such as `buzz.moonjoy.eth`.
+- The authenticated user's single agent mints or claims an agent name, such as `agent-buzz.moonjoy.eth`, into the already-created agent smart wallet.
+- Agent names resolve to agent-controlled addresses.
+- ENS records are used for real product behavior: ownership, agent discovery, MCP endpoint discovery, strategy provenance, and public match history pointers.
+
+Target records:
+
+```txt
+addr                 agent address
+avatar               agent image or generated profile asset
+moonjoy:user         buzz.moonjoy.eth
+moonjoy:mcp          https://moonjoy.app/mcp
+moonjoy:strategy     active strategy manifest hash or CID
+moonjoy:last_match   latest match id
+moonjoy:stats        compact stats pointer
+```
+
+Durin should be used if time allows because it gives Moonjoy a stronger ENS story: L2 subnames, mintable subdomain NFTs, and custom registrar logic. If Durin setup becomes a blocker, keep the MVP on functional ENS resolution and text records first.
+
+### KeeperHub
+
+KeeperHub is a stretch partner track that fits strategy distribution and monetization.
+
+Build after the base game works:
+
+- Publish one or more private workflows as paid marketplace strategies through KeeperHub.
+- Let other agents discover and pay to run those strategies without exposing the private workflow steps.
+- Let an agent call KeeperHub strategies during warm-up or during the match.
+- Track which KeeperHub workflow influenced each strategy decision.
+- Store KeeperHub strategy listing ids, run ids, price, and earnings attribution where feasible.
+- Show paid KeeperHub strategy usage in the match replay.
+
+Candidate paid strategy workflows:
+
+- Recovery Strategy: recover from bad positions.
+- Go for Victory: aggressive risk-on trading.
+- Crash Landing Strategy: reduce loss and preserve remaining value.
+- Discover Tokens: find highly volatile candidate tokens.
+- Rebalance to Base: move back into safer assets near match end.
+
+KeeperHub should sit alongside the agent's default strategy. It should not replace Moonjoy's strategy model.
+
+## System Shape
+
+```txt
+apps/web
+  Next.js app
+  Privy auth
+  onboarding
+  match UI
+  API routes
+  Moonjoy MCP endpoint
+  Uniswap, ENS, Privy, KeeperHub service adapters
+
+apps/worker
+  match timers
+  warm-up expiry
+  quote polling
+  autonomous agent loop coordination
+  settlement jobs
+
+packages/game
+  pure match rules
+  readiness rules
+  scoring rules
+  PnL calculation
+  winner selection
+
+supabase
+  user, agent, strategy, match, trade, quote, and audit tables
+
+contracts
+  future wager escrow and settlement contracts
+```
+
+`packages/game` must stay pure TypeScript. It should not import Next.js, Privy, Supabase, Uniswap, ENS, KeeperHub, environment variables, or filesystem APIs.
+
+## Privy Wallet Model
+
+Moonjoy should create an agent smart account as part of user signup. The smart account is the single visible game wallet for the user's agent and the player address in matches. MCP authorization does not create the smart account, mint ENS names, or perform setup actions by itself. MCP authorization only approves an external agent client, such as Claude or Codex, to operate through Moonjoy's approved tools for that user's agent.
+
+The human user owns the agent relationship and controls setup. The agent smart account owns the agent's public game identity, wager actions, trading actions, victories, stats, and match history. Strategies are user-owned records that can be assigned to the agent and attributed to the agent when used.
+
+```txt
+Human controller
+  Privy user
+  Privy embedded signer
+  user wallet / user NFT owner
+  resolves from: buzz.moonjoy.eth
+  purpose: login, setup, funding, withdrawals, recovery, intent creation, strategy ownership
+
+Agent smart account
+  Privy smart wallet / ERC-4337 account
+  created at: user signup
+  assigned to: the user's single Moonjoy agent
+  controlled by: human controller plus approved Moonjoy/agent execution authority
+  resolves from: agent-buzz.moonjoy.eth
+  purpose: wager deposits, trading capital, Uniswap trades, agent ENS identity, reputation, victories, stats, achievements, KeeperHub payments
+
+Approved external agent client
+  Claude, Codex, or another MCP-capable agent
+  authorized through: Moonjoy MCP auth
+  purpose: use Moonjoy skill files, `.md` context, and MCP tools to decide what to do next, then take approved actions such as preparing strategies, submitting simulated trades, or minting/claiming the agent ENS name into the agent smart account
+
+Agent execution authority
+  Privy authorization key or key quorum
+  scoped by policies where possible
+  purpose: let the live agent act from the agent smart account during match flows
+```
+
+In Privy terms:
+
+```txt
+Moonjoy concept                 Privy primitive
+Privy user                      user account
+Human controller signer          embedded wallet / embedded signer
+Agent player wallet              smart wallet / smart account
+Agent wallet creation            automatic smart wallet creation during user signup
+External agent authorization      Moonjoy MCP auth approval
+Agent execution authority        authorization key / key quorum, where needed
+Trade and wager guardrails       wallet policies, smart account permissions, backend checks
+```
+
+The server does not have one shared Moonjoy wallet. The server has one or more authorization keys or key quorums that can help control many distinct agent smart accounts. Each player still has an individual agent address because each agent gets its own smart account.
+
+Hackathon default:
+
+- Preconfigure Privy dashboard smart wallets for Base before implementation.
+- Use one Moonjoy execution key quorum for agent automation if per-agent key quorums slow down the build.
+- Create one distinct agent smart account when the user signs up.
+- Store the agent smart account address on the agent record.
+- Treat MCP authorization as external-agent approval only, not wallet provisioning or ENS minting.
+- Let the approved agent decide its next action from Moonjoy skill files, `.md` context, and MCP state.
+- Resolve `agent-<human-name>.moonjoy.eth` to the agent smart account address.
+- Let the human fund and withdraw from the agent smart account.
+- Have the agent smart account deposit the wager and execute or simulate trades.
+- Enforce match rules in Moonjoy's backend and MCP layer.
+
+Production direction:
+
+- Use one key quorum or smart account module per agent for cleaner isolated execution authority.
+- Use stricter policies or smart account permissions for token allowlists, contract allowlists, max notional, match expiry, and per-match capital limits.
+- Let users pause the agent, rotate execution authority, withdraw funds, or disconnect the agent.
+
+## Phase 0: Planning Baseline
+
+Goal: lock the product model before building more runtime.
+
+Deliverables:
+
+- This execution strategy exists in `docs/planned-execution-strategy.md`.
+- Existing `docs/architecture.md` remains the source for repo boundaries.
+- Existing `packages/game` match and scoring rules are treated as the starting point.
+- The game model is updated mentally from 2-minute matches to 5-minute matches before implementation begins.
+
+Gate:
+
+- The team agrees that one user has one agent, the agent smart wallet is created at signup, strategies are user-owned records assigned to agents, and strategy use is agent-attributed behavior rather than a match setup choice.
+
+## Phase 1: Authenticated User Onboarding
+
+Goal: only authenticated users can enter the Moonjoy game flow.
+
+Build:
+
+- Add Privy authentication to `apps/web`.
+- Create the authenticated user profile record.
+- Create or link the user's Privy embedded signer.
+- Store the embedded signer address for setup, recovery, funding, and withdrawal flows.
+- Create one agent record for the user.
+- Create one distinct Privy smart wallet for that agent during signup.
+- Store the agent smart account address on the agent record.
+- Block match creation until the user is authenticated.
+- Add explicit loading, empty, and error states for auth, signer creation, agent record creation, and smart wallet creation.
+
+Data model:
+
+```txt
+users
+  id
+  privy_user_id
+  embedded_signer_address
+  ens_name
+  created_at
+
+agents
+  id
+  user_id
+  smart_account_address
+  ens_name
+  status
+  created_at
+```
+
+Gate:
+
+- A signed-in user can reach a dashboard.
+- A signed-in user has one active agent record.
+- A signed-in user has one created agent smart account address.
+- A signed-out user cannot create a match.
+
+## Phase 2: User ENS Claim
+
+Goal: every game user has a human-readable Moonjoy identity.
+
+Build:
+
+- Add a claim flow for `*.moonjoy.eth`.
+- Validate label availability.
+- Resolve the claimed name after registration.
+- Store the user's ENS name in the user profile.
+- Display ENS name instead of raw address in primary UI.
+
+Data model changes:
+
+```txt
+ens_claims
+  id
+  user_id
+  ens_name
+  owner_address
+  resolver_address
+  transaction_hash
+  status
+  created_at
+```
+
+Gate:
+
+- A signed-in user can claim or link a Moonjoy ENS name.
+- The UI can resolve and display that name without hard-coded values.
+
+## Phase 3: Agent MCP Authorization And Operating Context
+
+Goal: an external agent client can safely operate the user's already-created Moonjoy agent.
+
+Build:
+
+- Add Moonjoy MCP auth flow.
+- Let the user approve one external agent client.
+- Store MCP client metadata and approval status.
+- Expose the approved agent's current identity, wallet, ENS, match, portfolio, and strategy state through MCP.
+- Add Moonjoy skill or `.md` context instructions so Codex, Claude, opencode, or another agent can infer the next allowed action.
+- Include ENS mint or claim as an allowed post-auth agent action, not an auth side effect.
+- Configure Moonjoy or agent execution authority so the live agent can act during match flows.
+- Store the controlling execution signer or key quorum id if real automated wallet actions require it.
+
+Rules:
+
+- A user may have only one active agent.
+- A user has one active agent smart account.
+- Agent identity is required before match creation.
+- Agent identity is not a UI choice during match creation.
+- The agent smart account is the game wallet and player address.
+- Wagers, trading capital, Uniswap trades, victories, stats, and reputation attach to the agent smart account.
+- Strategies are user-owned, assigned to the agent, and attributed to the agent smart account when used.
+- The human can fund or withdraw from the agent smart account.
+- MCP authorization is external-agent approval only. It is not smart wallet creation, ENS minting, or strategy creation.
+- After authorization, the agent uses Moonjoy skill files, `.md` context, and MCP tools to decide and execute the next allowed action.
+
+Data model:
+
+```txt
+agents
+  id
+  user_id
+  smart_account_address
+  execution_signer_id
+  ens_name
+  mcp_client_name
+  mcp_subject
+  status
+  created_at
+```
+
+Gate:
+
+- A user with a claimed ENS name can approve an agent.
+- The approved agent uses the smart account created during signup.
+- The approved external agent can read Moonjoy context and discover the next allowed actions.
+- ENS minting or claiming can happen through an explicit post-auth tool/action.
+- The user cannot approve a second active agent.
+
+## Phase 4: Agent Funding And Readiness
+
+Goal: make the agent smart account usable before the user creates a match.
+
+Build:
+
+- Show the agent smart account address to the user.
+- Let the user fund the agent smart account directly.
+- Let the user withdraw from the agent smart account when no live match blocks withdrawal.
+- Track available agent capital.
+- Track whether the agent has enough USDC or configured assets to enter a match.
+- Keep backend checks for future real trades:
+  - authenticated user controls the agent,
+  - agent is live,
+  - match is in warm-up or live state as required,
+  - action is within chain, token, contract, notional, and expiry limits.
+
+Data model:
+
+```txt
+agent_account_events
+  id
+  user_id
+  agent_id
+  smart_account_address
+  event_type
+  amount_usd
+  token_address
+  transaction_hash
+  created_at
+```
+
+Gate:
+
+- The user can see the agent smart account address.
+- The user can fund the agent smart account.
+- The user can withdraw from the agent smart account outside locked match flows.
+- Moonjoy can read the agent's available match capital.
+
+## Phase 5: Moonjoy Agent Skill
+
+Goal: make external coding agents productive quickly.
+
+Build:
+
+- Add a Moonjoy skill or instructions file for agents.
+- Explain how to authenticate to Moonjoy MCP.
+- Explain the match lifecycle and allowed tools.
+- Keep MCP as the agent integration surface. Do not add a REST mirror unless MCP blocks the demo.
+- Define strategy setup instructions: user chats with the agent, the agent creates or updates its strategies, and Moonjoy records provenance.
+
+MCP tools:
+
+```txt
+moonjoy_get_identity
+moonjoy_get_match_state
+moonjoy_get_portfolio
+moonjoy_get_market_quote
+moonjoy_submit_simulated_trade
+moonjoy_create_strategy
+moonjoy_update_strategy
+moonjoy_list_strategies
+moonjoy_record_strategy_decision
+```
+
+Gate:
+
+- A connected agent can call Moonjoy through MCP.
+- Strategy setup can happen through user-to-agent chat before any match.
+
+## Phase 6: Strategy Registry
+
+Goal: users can own multiple strategies that their agents can use with attribution.
+
+Build:
+
+- Add strategy records owned by users and assigned to agents.
+- Add strategy versions or revisions.
+- Store source type: user prompt, `.md` context, agent-generated plan, KeeperHub workflow, or default strategy.
+- Store a strategy manifest hash.
+- Let the agent mark decisions with the strategy or strategies used.
+- Do not require a user-facing strategy picker.
+
+Data model:
+
+```txt
+strategies
+  id
+  user_id
+  agent_id
+  agent_smart_account_address
+  name
+  source_type
+  manifest_hash
+  body
+  status
+  created_at
+
+strategy_decisions
+  id
+  strategy_id
+  match_id
+  trade_id
+  rationale
+  created_at
+```
+
+Gate:
+
+- A user can have multiple strategies.
+- Strategy records point to the owning user and the assigned agent smart account.
+- A trade or decision can be attributed to one or more strategies.
+- The default agent strategy exists even if the user never configures one.
+
+## Phase 7: Match Creation With Wager Terms
+
+Goal: authenticated users with an agent can create wagered match links.
+
+Build:
+
+- Match creator must be authenticated.
+- Match creator must have a claimed ENS name.
+- Match creator must have an approved agent identity.
+- Match creator must have a funded, live agent smart account.
+- Create a match with fixed default terms:
+  - $10 wager.
+  - 5-minute trading window.
+  - warm-up stage before the live clock.
+  - highest normalized PnL wins.
+- The user creates match intent; the agent performs the match actions.
+- Generate a shareable match link.
+- Opponent joins only after satisfying the same identity requirements.
+- Neither player chooses an agent or strategy because those are already attached to the user.
+
+Data model:
+
+```txt
+matches
+  id
+  status
+  wager_usd
+  duration_seconds
+  warmup_seconds
+  scoring_method
+  created_by_user_id
+  created_at
+  starts_at
+  ends_at
+  settled_at
+
+match_seats
+  id
+  match_id
+  user_id
+  agent_id
+  agent_smart_account_address
+  role
+  starting_value_usd
+  ending_value_usd
+  pnl_usd
+  pnl_percent
+```
+
+Gate:
+
+- A valid user can create a match link.
+- Another valid user can join the link.
+- Both seats have live agent smart accounts.
+- Neither player selects an agent or strategy during match setup.
+
+## Phase 8: Warm-Up Stage
+
+Goal: give agents time to inspect state and prepare before the trading clock starts.
+
+Build:
+
+- Add `warmup` or equivalent status to the match lifecycle.
+- During warm-up, agents may:
+  - fetch match state,
+  - inspect available capital,
+  - fetch market quotes,
+  - create or update strategies,
+  - verify smart account funding,
+  - call KeeperHub strategy workflows if enabled.
+- During warm-up, agents may not submit simulated trades.
+- When both agents are ready or the warm-up timer expires, the match becomes live.
+
+Gate:
+
+- Warm-up is visible in UI.
+- Agent actions during warm-up are audited.
+- No trade can be accepted before live start.
+
+## Phase 9: Uniswap Quote-Backed Simulated Trading
+
+Goal: make trading feel real while remaining deterministic.
+
+Build:
+
+- Add a Uniswap service adapter.
+- Use Base token addresses and known supported tokens first.
+- Request quotes for proposed agent trades.
+- Persist the full quote metadata needed for replay.
+- Convert successful quotes into simulated fills.
+- Reject trades when quote retrieval fails, quote is stale, liquidity is insufficient, or the match is not live.
+- Attribute every quote and fill to the agent smart account.
+- For real execution later, submit transactions from the agent smart account.
+
+Data model:
+
+```txt
+quote_snapshots
+  id
+  match_id
+  agent_id
+  agent_smart_account_address
+  request_id
+  token_in
+  token_out
+  amount_in
+  amount_out
+  routing
+  route_summary
+  gas_estimate
+  raw_response
+  created_at
+
+simulated_trades
+  id
+  match_id
+  agent_id
+  agent_smart_account_address
+  quote_snapshot_id
+  token_in
+  token_out
+  amount_in
+  amount_out
+  status
+  created_at
+```
+
+Gate:
+
+- Agents can trade only through quote-backed simulation.
+- Every fill can be replayed from stored data.
+- The UI can explain why each trade happened and which strategy influenced it.
+- Agent smart account identity, strategy attribution, wager, and trading actions stay unified.
+
+## Phase 10: Portfolio Scoring And Settlement
+
+Goal: finish matches fairly and visibly.
+
+Build:
+
+- Snapshot each player's starting portfolio value at live start.
+- Snapshot ending value at match end.
+- Calculate PnL USD and PnL percentage.
+- Select the winner by PnL percentage.
+- Use raw PnL USD as supporting context, not the winner criterion.
+- Record wager settlement intent after the grace window.
+- Pay wager winnings to the winning agent smart account when escrow is enabled.
+- Attribute match win, strategy performance, and skill history to the winning agent smart account.
+- The human can withdraw from the agent smart account after settlement.
+- Keep settlement state explicit: pending, settling, complete, failed.
+
+Gate:
+
+- A completed match has deterministic scores.
+- The winner can be explained from stored portfolio snapshots.
+- Wager settlement is either recorded for later escrow wiring or completed with a clear retry path when escrow is enabled.
+
+## Phase 11: Wager Escrow Contract
+
+Goal: make the $10 wager credible without coupling it to trading capital.
+
+Build:
+
+- Add a minimal escrow contract after the offchain match flow is clear.
+- Both agents deposit the fixed wager from their agent smart accounts.
+- The contract records match id, two agent smart account addresses, amount, and status.
+- The backend submits or proves the winner for the hackathon version.
+- Keep trading capital in the agent smart account outside the wager escrow.
+- The human user creates the match intent, but the agent performs the wager deposit.
+
+Initial contract responsibilities:
+
+```txt
+createMatchEscrow(matchId, agentA, agentB, wagerToken, wagerAmount)
+deposit(matchId)
+cancelBeforeStart(matchId)
+settle(matchId, winner)
+refund(matchId)
+```
+
+Restraint:
+
+- Do not build complex dispute resolution first.
+- Do not settle simulated trades onchain.
+- Do not require the contract to know strategy or quote details.
+
+Gate:
+
+- Both agents can lock the $10 wager from their smart accounts.
+- The system can settle the wager to the winning agent smart account in a demo-safe way.
+- Wager custody is visibly separate from active trading capital.
+
+## Phase 12: KeeperHub Strategy Marketplace
+
+Goal: add partner-track depth without weakening the core game.
+
+Build:
+
+- Integrate KeeperHub after default strategy execution works.
+- Publish private workflows as paid marketplace strategies:
+  - Recovery Strategy.
+  - Go for Victory.
+  - Crash Landing Strategy.
+  - Discover Tokens.
+  - Rebalance to Base.
+- Keep private workflow steps hidden from strategy buyers.
+- Let other agents discover, pay for, and run published KeeperHub strategies.
+- Let agents call these strategies during warm-up or during the live match.
+- Store marketplace listing id, workflow id, execution id, price, output, and strategy decision linkage.
+- Let the agent smart account pay for strategy runs and receive attribution or earnings where feasible.
+- Show paid strategy usage in match replay.
+
+Gate:
+
+- KeeperHub use is visible and meaningful.
+- The match still works if KeeperHub is disabled.
+
+## Phase 13: Demo And Submission Polish
+
+Goal: make the project legible to judges.
+
+Build:
+
+- Arena UI with timer, warm-up status, agent identities, trade feed, Uniswap routes, strategy decisions, PnL, and final winner.
+- Agent profile page with ENS identity, strategy list, and performance stats.
+- Match replay page with quote provenance.
+- `FEEDBACK.md` for Uniswap.
+- README setup and architecture section.
+- Short demo script and recorded walkthrough.
+
+Gate:
+
+- A judge can understand:
+  - how Uniswap powers quote-backed trading,
+  - how ENS makes agents discoverable and accountable,
+  - how Privy gives every user an agent smart account at signup,
+  - how MCP authorization approves an external agent client without provisioning a wallet or performing setup actions,
+  - how the approved agent uses Moonjoy context and tools to choose post-auth actions,
+  - how the human creates intent while the agent account makes wagers and trades,
+  - how KeeperHub can publish private workflows as paid marketplace strategies,
+  - why the $10 wager is separate from trading capital,
+  - why normalized PnL determines the winner.
+
+## First Implementation Order
+
+1. Update `packages/game` match constants from 3 minutes to 5 minutes when implementation begins.
+2. Add explicit warm-up state and tests in `packages/game`.
+3. Add Privy auth and user signup in `apps/web`.
+4. Create the one-agent-per-user record and Privy agent smart wallet during signup.
+5. Store the human embedded signer address separately from the agent smart account address.
+6. Add user ENS claim/link flow.
+7. Add MCP authorization for external agent clients, plus Moonjoy skill/context for post-auth action selection.
+8. Add ENS mint/claim as an explicit post-auth agent action into the existing smart wallet.
+9. Add agent funding, withdrawal, and readiness tracking.
+10. Add user-owned strategy registry assigned to agents.
+11. Add match create/join/warm-up/live/settle flow.
+12. Add Uniswap quote-backed simulated trades.
+13. Add scoring and replay UI.
+14. Add wager escrow contract.
+15. Add KeeperHub paid marketplace strategy workflows.
+16. Add submission docs and demo polish.
+
+## Deliberate Simplifications
+
+- Start with one chain: Base.
+- Start with a curated token list.
+- Start with simulated fills from Uniswap quotes.
+- Start with one active agent per user.
+- Start with one agent smart account per user, created during signup.
+- Start with one Moonjoy execution key quorum if per-agent execution keys slow down the hackathon.
+- Start with one fixed wager amount.
+- Start with backend-authorized escrow settlement.
+- Start with simple user-owned strategy manifests before richer strategy analytics.
+- Start with KeeperHub as optional paid marketplace strategy source, not required match infrastructure.
+
+## Risks
+
+- ENS registrar work may take longer than expected, but ENS and Durin setup should not block the core development cycle.
+- Uniswap API rate limits require caching and throttling.
+- External agents may fail to call tools reliably.
+- Wager escrow can become a time sink if built before the offchain game loop is stable.
+- PnL fairness is easy to miscommunicate if raw dollar PnL is emphasized over percentage PnL.
+- KeeperHub can distract from the stronger Uniswap and ENS prize narratives if added too early.
+
+## Current Repo Fit
+
+The existing repo already supports this direction:
+
+- `apps/web` is the right place for Privy, ENS, MCP, Uniswap, and UI work during the hackathon.
+- `apps/worker` exists and can later own timers, polling, and settlement retries.
+- `packages/game` already owns match readiness and PnL helpers.
+- `docs/architecture.md` already defines the correct dependency direction.
+- `supabase/migrations` exists and is the right place for sequential schema additions.
