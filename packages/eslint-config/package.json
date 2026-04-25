@@ -1,0 +1,14 @@
+{
+  "name": "@moonjoy/eslint-config",
+  "version": "0.0.0",
+  "private": true,
+  "license": "UNLICENSED",
+  "type": "module",
+  "files": [
+    "next.js"
+  ],
+  "devDependencies": {
+    "eslint-config-next": "16.2.2",
+    "eslint": "^9"
+  }
+}
