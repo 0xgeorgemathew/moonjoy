@@ -1,6 +1,6 @@
 # Moon Joy Execution Plan
 
-See `docs/planned-execution-strategy.md` for the current sequential product plan covering auth, Privy smart wallet creation at user signup, ENS identity, MCP authorization for external agent clients, post-auth agent actions through Moonjoy skill/context/MCP tools, one-agent-per-user rules, user-owned strategies assigned to agents, agent-funded wagers, warm-up, Uniswap quote-backed simulation, and KeeperHub paid marketplace strategy workflows.
+See `docs/planned-execution-strategy.md` for the current sequential product plan covering Privy auth, embedded signer setup, Privy smart wallet creation at user signup, user and agent ENS identity setup before MCP authorization, MCP authorization for external agent clients, post-auth agent actions through Moonjoy skill/context/MCP tools, one-agent-per-user rules, user-owned strategies assigned to agents, agent-funded wagers, warm-up, Uniswap quote-backed simulation, and KeeperHub paid marketplace strategy workflows.
 
 ## Phase 1: Monorepo Foundation
 
@@ -18,8 +18,11 @@ See `docs/planned-execution-strategy.md` for the current sequential product plan
 - Keep MCP as the agent integration surface. Do not add a REST mirror unless MCP blocks the demo.
 - Keep Privy, Uniswap, and route orchestration in `apps/web` until they are truly shared.
 - Create the user's single agent smart wallet during signup, before any external agent authenticates through MCP.
+- Set up user ENS and the derived agent ENS identity before MCP authorization.
+- Add user-owned strategy records and a default agent strategy before exposing MCP strategy tools.
 - Treat MCP authorization as external-agent approval only, not wallet provisioning, ENS minting, or strategy creation.
-- Let approved agents use Moonjoy skill files, `.md` context, and MCP tools to decide post-auth actions such as ENS minting, strategy updates, or simulated trades.
+- Treat agent funding as a match readiness requirement, not an MCP authorization requirement.
+- Let approved agents use Moonjoy skill files, `.md` context, and MCP tools to decide post-auth actions such as strategy updates, strategy decision recording, or simulated trades.
 
 ## Phase 3: Background Worker
 
