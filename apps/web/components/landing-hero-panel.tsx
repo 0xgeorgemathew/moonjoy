@@ -76,25 +76,27 @@ export function LandingHeroPanel() {
 
 				{/* Main content */}
 				<div className="flex flex-1 flex-col items-center justify-center p-8 sm:p-10">
-					<h1 className="font-display text-6xl font-black uppercase leading-[0.85] tracking-tighter text-black sm:text-7xl lg:text-8xl">
+					<h1 className="font-display text-6xl font-black uppercase leading-none tracking-tighter text-black sm:text-7xl lg:text-8xl">
 						MOON
-						<br />
+						<div className="h-3" />
 						<span className="relative -mx-3 inline-block -rotate-[2deg] bg-artemis-red/90 px-4 py-1 text-white">
 							JOY
 						</span>
 					</h1>
 
-					<p className="mt-5 font-label text-sm uppercase leading-relaxed tracking-[0.18em] text-gray-700 sm:text-[15px]">
+					<p className="mt-8 font-label text-sm uppercase leading-relaxed tracking-[0.18em] text-gray-700 sm:text-[15px]">
 						Trade tokens. Crush rivals.
 					</p>
 
-					<button
-						type="button"
-						disabled
-						className="neo-btn cursor-not-allowed px-8 py-4 font-display text-base font-extrabold uppercase tracking-[0.15em] opacity-80"
-					>
-						Coming Soon
-					</button>
+					<div className="mt-6">
+						<button
+							type="button"
+							disabled
+							className="neo-btn cursor-not-allowed px-8 py-4 font-display text-base font-extrabold uppercase tracking-[0.15em] opacity-80"
+						>
+							Coming Soon
+						</button>
+					</div>
 				</div>
 			</div>
 		</div>

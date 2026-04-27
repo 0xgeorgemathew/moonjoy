@@ -1,8 +1,8 @@
 import type { Metadata, Viewport } from "next";
-import { Space_Grotesk, Manrope, Inter } from "next/font/google";
+import { Orbitron, Manrope, Inter } from "next/font/google";
 import "./globals.css";
 
-const spaceGrotesk = Space_Grotesk({
+const orbitron = Orbitron({
   variable: "--font-display",
   subsets: ["latin"],
 });
@@ -39,7 +39,7 @@ export default function RootLayout({
   return (
     <html
       lang="en"
-      className={`${spaceGrotesk.variable} ${manrope.variable} ${inter.variable} h-full antialiased`}
+      className={`${orbitron.variable} ${manrope.variable} ${inter.variable} h-full antialiased`}
     >
       <head>
         <meta name="apple-mobile-web-app-capable" content="yes" />
