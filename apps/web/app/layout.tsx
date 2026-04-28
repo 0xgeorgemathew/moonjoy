@@ -1,3 +1,5 @@
+import "@/lib/log.init";
+
 import type { Metadata, Viewport } from "next";
 import { Orbitron, Manrope, Inter } from "next/font/google";
 import { Providers } from "@/components/providers";
