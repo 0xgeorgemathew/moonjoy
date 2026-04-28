@@ -1,7 +1,7 @@
 export function LandingMoon() {
   return (
     <div
-      className="moon-hero animate-float pointer-events-none absolute right-[8vw] top-[15vh] z-[3]"
+      className="moon-hero pointer-events-none absolute right-[8vw] top-[15vh] z-[3]"
       aria-hidden="true"
     >
       <div className="moon-glow">

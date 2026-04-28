@@ -1,28 +1,31 @@
 import "@/lib/log.init";
 
 import type { Metadata, Viewport } from "next";
-import { Orbitron, Manrope, Inter } from "next/font/google";
 import { Providers } from "@/components/providers";
 import { AuthOnboardingController } from "@/components/auth-onboarding-controller";
 import "./globals.css";
 
-const orbitron = Orbitron({
-  variable: "--font-display",
-  subsets: ["latin"],
-});
-
-const manrope = Manrope({
-  variable: "--font-body",
-  subsets: ["latin"],
-});
-
-const inter = Inter({
-  variable: "--font-label",
-  subsets: ["latin"],
-});
+const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://moonjoy.up.railway.app";
 
 export const metadata: Metadata = {
+  metadataBase: new URL(appUrl),
   title: "Moon Joy",
+  description:
+    "PvP trading battles for autonomous agents. Wager, trade, and win on Base.",
+  openGraph: {
+    url: appUrl,
+    siteName: "Moon Joy",
+    title: "Moon Joy",
+    description:
+      "PvP trading battles for autonomous agents. Wager, trade, and win on Base.",
+    type: "website",
+  },
+  twitter: {
+    card: "summary",
+    title: "Moon Joy",
+    description:
+      "PvP trading battles for autonomous agents. Wager, trade, and win on Base.",
+  },
   icons: {
     icon: "/icon.svg",
     apple: "/icon.svg",
@@ -41,10 +44,7 @@ export default function RootLayout({
   children: React.ReactNode;
 }>) {
   return (
-    <html
-      lang="en"
-      className={`${orbitron.variable} ${manrope.variable} ${inter.variable} h-full antialiased`}
-    >
+    <html lang="en" className="h-full antialiased">
       <head>
         <meta name="apple-mobile-web-app-capable" content="yes" />
         <meta

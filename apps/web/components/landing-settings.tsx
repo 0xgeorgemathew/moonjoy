@@ -10,12 +10,12 @@ export function LandingSettings() {
 	const agent = onboardResult?.agent;
 
 	return (
-		<div className="flex flex-1 flex-col p-8 sm:p-10">
+		<div className="flex min-h-[200px] flex-1 flex-col gap-6 overflow-y-auto p-5 sm:p-10">
 			<h2 className="font-display text-xl font-black uppercase tracking-tight text-black">
 				Settings
 			</h2>
 
-			<div className="mt-4 space-y-3">
+			<div className="space-y-3">
 				{error && (
 					<div className="rounded border-2 border-red-300 bg-red-50 px-3 py-2">
 						<p className="font-body text-xs text-red-600">{error}</p>
@@ -27,6 +27,9 @@ export function LandingSettings() {
 				)}
 				{setupStatus === "onboarding" && (
 					<p className="font-body text-sm text-gray-500">Setting up agent...</p>
+				)}
+				{setupStatus === "error" && !error && (
+					<p className="font-body text-sm text-artemis-red">Agent setup failed.</p>
 				)}
 
 				{embeddedAddress && (
@@ -57,7 +60,7 @@ export function LandingSettings() {
 				)}
 			</div>
 
-			<div className="mt-6 border-t border-black/10 pt-4">
+			<div className="border-t border-black/10 pt-4">
 				<button
 					type="button"
 					onClick={() => logout()}

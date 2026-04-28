@@ -4,53 +4,64 @@ import { useState } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { LandingNav } from "@/components/landing-nav";
 import { LandingCta } from "@/components/landing-cta";
+import { LandingProfile } from "@/components/landing-profile";
 import { LandingSettings } from "@/components/landing-settings";
 import { NetworkToggle } from "@/components/network-toggle";
 
+type ViewType = "hero" | "profile" | "settings";
+
 export function LandingHeroPanel() {
-	const { authenticated } = usePrivy();
-	const [activeView, setActiveView] = useState<"hero" | "settings">("hero");
+  const { authenticated } = usePrivy();
+  const [activeView, setActiveView] = useState<ViewType>("hero");
 
-	return (
-		<div className="relative z-20 flex min-h-full items-start justify-center pt-[18vh] px-4 lg:pt-[14vh] lg:px-8">
-			<div className="neo-panel flex w-full max-w-4xl flex-col overflow-hidden lg:flex-row">
-				<LandingNav
-					activeView={activeView}
-					onSettingsClick={() => setActiveView("settings")}
-					onHomeClick={() => setActiveView("hero")}
-				/>
+  const networkToggle = (
+    <div className="absolute right-2 top-4 z-10 sm:right-4">
+      <NetworkToggle />
+    </div>
+  );
 
-				{activeView === "settings" && authenticated ? (
-					<div className="relative flex flex-1 flex-col">
-						<div className="absolute right-4 top-4 z-10">
-							<NetworkToggle />
-						</div>
-						<LandingSettings />
-					</div>
-				) : (
-					<div className="relative flex flex-1 flex-col items-center justify-center p-8 sm:p-10">
-						<div className="absolute right-4 top-4">
-							<NetworkToggle />
-						</div>
+  return (
+    <div className="relative z-20 flex min-h-full items-start justify-center pt-[18vh] px-2 sm:px-4 lg:pt-[14vh] lg:px-8">
+      <div className="neo-panel flex w-full max-w-4xl flex-col overflow-hidden lg:flex-row">
+        <LandingNav
+          activeView={activeView}
+          onSettingsClick={() => setActiveView("settings")}
+          onHomeClick={() => setActiveView("hero")}
+          onProfileClick={() => setActiveView("profile")}
+        />
 
-						<h1 className="font-display text-6xl font-black uppercase leading-none tracking-tighter text-black sm:text-7xl lg:text-8xl">
-							MOON
-							<div className="h-3" />
-							<span className="relative -mx-3 inline-block -rotate-[2deg] bg-artemis-red/90 px-4 py-1 text-white">
-								JOY
-							</span>
-						</h1>
+        {activeView === "profile" && authenticated ? (
+          <div key="profile" className="animate-fade-in-up relative flex min-h-[200px] flex-1 flex-col">
+            {networkToggle}
+            <LandingProfile />
+          </div>
+        ) : activeView === "settings" && authenticated ? (
+          <div key="settings" className="animate-fade-in-up relative flex min-h-[200px] flex-1 flex-col">
+            {networkToggle}
+            <LandingSettings />
+          </div>
+        ) : (
+          <div key="hero" className="animate-fade-in-up relative flex min-h-[200px] flex-1 flex-col items-center justify-center p-5 sm:p-10">
+            {networkToggle}
 
-						<p className="mt-8 font-label text-sm uppercase leading-relaxed tracking-[0.18em] text-gray-700 sm:text-[15px]">
-							Trade tokens. Crush rivals.
-						</p>
+            <h1 className="overflow-hidden text-wrap-balance font-display text-[clamp(2.5rem,10vw,3.75rem)] font-black uppercase leading-none tracking-tighter text-black sm:text-7xl lg:text-8xl">
+              MOON
+              <div className="h-2 sm:h-3" />
+              <span className="relative -mx-1 inline-block -rotate-[2deg] bg-artemis-red/90 px-4 py-1 text-white sm:-mx-3">
+                JOY
+              </span>
+            </h1>
 
-						<div className="mt-6">
-							<LandingCta />
-						</div>
-					</div>
-				)}
-			</div>
-		</div>
-	);
+            <p className="mt-5 font-label text-sm uppercase leading-relaxed tracking-[0.18em] text-gray-700 sm:mt-8 sm:text-[15px]">
+              Trade tokens. Crush rivals.
+            </p>
+
+            <div className="mt-6">
+              <LandingCta />
+            </div>
+          </div>
+        )}
+      </div>
+    </div>
+  );
 }

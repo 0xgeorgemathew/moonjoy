@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
+import { UserIdentityBlock } from "@/components/user-identity-block";
 
 const navItems = [
 	{
@@ -47,27 +48,50 @@ const navItems = [
 	},
 ];
 
-export function LandingNav({ activeView, onSettingsClick, onHomeClick }: { activeView: string; onSettingsClick: () => void; onHomeClick: () => void }) {
+const profileIcon = (
+	<svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+		<path d="M19 21v-2a4 4 0 0 0-4-4H9a4 4 0 0 0-4 4v2" />
+		<circle cx="12" cy="7" r="4" />
+	</svg>
+);
+
+type ViewType = "hero" | "profile" | "settings";
+
+export function LandingNav({ activeView, onSettingsClick, onHomeClick, onProfileClick }: { activeView: ViewType; onSettingsClick: () => void; onHomeClick: () => void; onProfileClick: () => void }) {
 	const { authenticated } = usePrivy();
 
-	return (
-		<aside className="flex shrink-0 flex-col items-center gap-1 border-b border-black/10 px-3 py-4 lg:w-[72px] lg:border-b-0 lg:border-r lg:px-2 lg:py-6">
-			<div className="mb-3 font-display text-sm font-black uppercase tracking-tighter text-black">
-				MJ
-			</div>
+	const buttonClass = (isActive: boolean) =>
+		`flex flex-col items-center gap-1 rounded-lg px-2 py-2.5 transition-all ${
+			isActive
+				? "bg-artemis-red text-white shadow-[3px_3px_0_0_#1565C0] border-2 border-black font-bold"
+				: "text-gray-500 hover:bg-gray-100 hover:text-black"
+		}`;
 
-			<nav className="flex flex-1 flex-col gap-1">
+	return (
+		<aside className="flex min-w-0 shrink-0 flex-col items-center gap-0.5 overflow-x-auto border-b border-black/10 px-2 py-3 sm:gap-1 sm:px-3 sm:py-4 lg:w-[72px] lg:overflow-x-visible lg:border-b-0 lg:border-r lg:px-2 lg:py-6">
+			<UserIdentityBlock authenticated={authenticated} />
+
+			<nav className="flex flex-1 flex-col gap-0.5 sm:gap-1">
+				{authenticated && (
+					<button
+						type="button"
+						onClick={onProfileClick}
+						className={buttonClass(activeView === "profile")}
+					>
+						{profileIcon}
+						<span className="text-[9px] font-label font-semibold uppercase tracking-wider">
+							Profile
+						</span>
+					</button>
+				)}
+
 				{navItems.map((item) => (
 					item.label === "HQ" ? (
 						<button
 							key={item.label}
 							type="button"
 							onClick={onHomeClick}
-							className={`flex flex-col items-center gap-1 rounded-lg px-2 py-2.5 transition-all ${
-								activeView === "hero"
-									? "bg-artemis-red text-white shadow-[3px_3px_0_0_#1565C0] border-2 border-black font-bold"
-									: "text-gray-500 hover:bg-gray-100 hover:text-black"
-							}`}
+							className={buttonClass(activeView === "hero")}
 						>
 							{item.icon}
 							<span className="text-[9px] font-label font-semibold uppercase tracking-wider">
@@ -93,11 +117,7 @@ export function LandingNav({ activeView, onSettingsClick, onHomeClick }: { activ
 				<button
 					type="button"
 					onClick={onSettingsClick}
-					className={`flex flex-col items-center gap-1 rounded-lg px-2 py-2.5 transition-all ${
-						activeView === "settings"
-							? "bg-artemis-red text-white shadow-[3px_3px_0_0_#1565C0] border-2 border-black font-bold"
-							: "text-gray-500 hover:bg-gray-100 hover:text-black"
-					}`}
+					className={buttonClass(activeView === "settings")}
 				>
 					<svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
 						<path d="M12.22 2h-.44a2 2 0 0 0-2 2v.18a2 2 0 0 1-1 1.73l-.43.25a2 2 0 0 1-2 0l-.15-.08a2 2 0 0 0-2.73.73l-.22.38a2 2 0 0 0 .73 2.73l.15.1a2 2 0 0 1 1 1.72v.51a2 2 0 0 1-1 1.74l-.15.09a2 2 0 0 0-.73 2.73l.22.38a2 2 0 0 0 2.73.73l.15-.08a2 2 0 0 1 2 0l.43.25a2 2 0 0 1 1 1.73V20a2 2 0 0 0 2 2h.44a2 2 0 0 0 2-2v-.18a2 2 0 0 1 1-1.73l.43-.25a2 2 0 0 1 2 0l.15.08a2 2 0 0 0 2.73-.73l.22-.39a2 2 0 0 0-.73-2.73l-.15-.08a2 2 0 0 1-1-1.74v-.5a2 2 0 0 1 1-1.74l.15-.09a2 2 0 0 0 .73-2.73l-.22-.38a2 2 0 0 0-2.73-.73l-.15.08a2 2 0 0 1-2 0l-.43-.25a2 2 0 0 1-1-1.73V4a2 2 0 0 0-2-2z" />
