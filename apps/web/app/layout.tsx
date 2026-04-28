@@ -1,5 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { Orbitron, Manrope, Inter } from "next/font/google";
+import { Providers } from "@/components/providers";
+import { AuthOnboardingController } from "@/components/auth-onboarding-controller";
 import "./globals.css";
 
 const orbitron = Orbitron({
@@ -49,9 +51,12 @@ export default function RootLayout({
         />
       </head>
       <body className="min-h-[100dvh] bg-surface">
-        <div className="safe-area-wrapper flex h-[100dvh]">
-          {children}
-        </div>
+        <Providers>
+          <AuthOnboardingController />
+          <div className="safe-area-wrapper flex h-[100dvh]">
+            {children}
+          </div>
+        </Providers>
       </body>
     </html>
   );

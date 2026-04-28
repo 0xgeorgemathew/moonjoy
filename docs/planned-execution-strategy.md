@@ -9,7 +9,7 @@ This plan is intentionally sequential. Each phase has one main outcome and a gat
 - Every match has a warm-up stage before the trading clock starts.
 - The wager is fixed at $10 for the first demo version.
 - The wager is separate from each user's trading capital.
-- Users may bring and deploy trading capital as they choose.
+- Users may bring and deploy trading capital from a curated Base asset set.
 - The winner is the player with the best normalized PnL over the match window.
 - For fairness, the primary score should be PnL percentage from each player's starting marked portfolio value, not raw dollar PnL.
 - A player is a user plus that user's single Moonjoy agent.
@@ -19,6 +19,7 @@ This plan is intentionally sequential. Each phase has one main outcome and a gat
 - A user may own one or more strategies that the user's agent can use during a match.
 - Strategy choice is part of the agent's autonomous behavior and must be attributable after the match.
 - The human user creates game intent and controls setup.
+- The user must approve the agent once through Moonjoy MCP before creating or joining matches.
 - The user owns the agent relationship and user-owned assets.
 - The agent smart account is the player wallet.
 - The agent smart account is created during user signup, not during MCP authorization.
@@ -27,6 +28,8 @@ This plan is intentionally sequential. Each phase has one main outcome and a gat
 - The human user can fund or withdraw from the agent smart account.
 - The agent makes the wager from the agent smart account.
 - The agent trades from the agent smart account.
+- A match is created only after the creator's $10 wager deposit is recorded.
+- Before the escrow contract exists, wager deposits are simulated backend ledger locks. After escrow exists, the same deposit boundary should swap to a real contract deposit.
 - Real swap execution is not required for the first demo.
 - Live Uniswap quote data and deterministic simulated execution are required for the first demo.
 - The wager likely needs an escrow contract once the game moves beyond pure simulation.
@@ -53,12 +56,13 @@ Do not build first:
 
 ### ENS
 
-ENS is the core identity layer.
+ENS is the core identity layer. Durin is the required implementation path for Moonjoy ENS subnames in the demo.
 
 Build:
 
 - User claims a Moonjoy ENS name, such as `buzz.moonjoy.eth`.
 - The authenticated user's single agent mints or claims an agent name, such as `agent-buzz.moonjoy.eth`, into the already-created agent smart wallet.
+- Use the deployed Durin setup in `/Users/george/Workspace/durin` and the Moonjoy ops notes in `docs/ens-durin-infrastructure.md`.
 - Agent names resolve to agent-controlled addresses.
 - ENS records are used for real product behavior: ownership, agent discovery, MCP endpoint discovery, strategy provenance, and public match history pointers.
 
@@ -76,7 +80,7 @@ moonjoy:stats        compact stats pointer
 
 These records can be filled incrementally. `addr`, `moonjoy:user`, and `moonjoy:mcp` belong with identity setup. `moonjoy:strategy` should be written after the default strategy exists. `moonjoy:last_match` and richer stats pointers should be written after matches exist.
 
-Durin should be used if time allows because it gives Moonjoy a stronger ENS story: L2 subnames, mintable subdomain NFTs, and custom registrar logic. If Durin setup becomes a blocker, keep the MVP on functional ENS resolution and text records first.
+Durin is not a stretch item. The demo should use the deployed Base Sepolia Durin registry and registrar for user and agent subnames. If the custom Moonjoy registrar upgrade is not ready, keep the first demo on the currently deployed Durin registrar, but do not replace Durin with cosmetic offchain ENS labels.
 
 ### KeeperHub
 
@@ -141,10 +145,10 @@ contracts
 The implementation order should follow these blockers:
 
 1. Privy auth, embedded signer creation, user record, one-agent-per-user record, and the agent smart account must come first.
-2. User and agent ENS setup requires the already-created agent smart account address.
+2. User and agent ENS setup requires the already-created agent smart account address and should use the deployed Durin registry and registrar.
 3. The default strategy record requires the agent record and smart account address. ENS strategy text records can only be finalized after this exists.
-4. MCP authorization requires a provisioned wallet, user identity, agent identity, and default strategy. It must not provision wallets, mint ENS names, or create the first strategy as an auth side effect.
-5. Funding can be built independently of MCP authorization, but match creation and joining require funded wager capital and trading capital.
+4. MCP authorization is a one-time required approval before match creation or joining. It requires a provisioned wallet, user identity, agent identity, and default strategy. It must not provision wallets, mint ENS names, or create the first strategy as an auth side effect.
+5. Funding can be built independently of MCP authorization, but match creation and joining require a depositable $10 wager plus enough curated trading capital. The create and join endpoints must record the wager deposit before creating the match or accepting the seat.
 6. `packages/game` match constants, warm-up status, readiness terminology, and tests must be corrected before match creation, join, live, or settlement flows depend on them.
 7. Match lifecycle must work before Uniswap quote-backed simulated trading is useful.
 8. Portfolio scoring and replay must work before wager escrow and KeeperHub marketplace work.
@@ -284,6 +288,8 @@ Goal: bind both the human user and the already-created agent smart account to fu
 
 Build:
 
+- Use the deployed Durin L2 registry and registrar from `docs/ens-durin-infrastructure.md`.
+- Treat Durin names as functional product identity, not display-only labels.
 - Add a claim flow for `*.moonjoy.eth`.
 - Validate label availability.
 - Resolve the claimed user name after registration.
@@ -379,6 +385,8 @@ Gate:
 
 Goal: an external agent client can safely operate the user's already-created, identified, and strategy-backed Moonjoy agent.
 
+The user approves the agent once through Moonjoy MCP. Match creation and joining are blocked until this approval exists.
+
 Build:
 
 - Add Moonjoy MCP auth flow.
@@ -428,6 +436,7 @@ Gate:
 - The approved agent uses the smart account created during signup.
 - The approved external agent can read Moonjoy context and discover the next allowed actions.
 - Strategy create and update tools operate against already-existing strategy tables.
+- Match creation and joining are impossible until the one-time MCP approval exists.
 - The user cannot approve a second active agent.
 
 MCP tools:
@@ -456,8 +465,13 @@ Build:
 - Let the user fund the agent smart account directly.
 - Let the user withdraw from the agent smart account when no live match blocks withdrawal.
 - Track available agent capital.
-- Track whether the agent has enough USDC or configured assets to enter a match.
+- Track whether the agent has enough value in the curated Base trading asset set to enter a match.
 - Track whether the fixed $10 wager can be covered separately from trading capital.
+- Add a simulated wager deposit ledger for the first demo.
+- Lock the creator's $10 wager in the simulated ledger before a match row or shareable match link is created.
+- Lock the opponent's $10 wager in the simulated ledger before the opponent can join.
+- Make deposit creation atomic with match creation or seat acceptance so no playable match exists without the required lock.
+- Keep the simulated deposit service behind an adapter that can later be replaced by the escrow contract deposit.
 - Keep backend checks for future real trades:
   - authenticated user controls the agent,
   - agent is live,
@@ -477,6 +491,18 @@ agent_account_events
   token_address
   transaction_hash
   created_at
+
+wager_deposits
+  id
+  user_id
+  agent_id
+  match_id
+  smart_account_address
+  amount_usd
+  mode
+  status
+  transaction_hash
+  created_at
 ```
 
 Gate:
@@ -485,7 +511,7 @@ Gate:
 - The user can fund the agent smart account.
 - The user can withdraw from the agent smart account outside locked match flows.
 - Moonjoy can read the agent's available match capital.
-- Moonjoy can tell whether wager funds and trading capital are both ready.
+- Moonjoy can tell whether the simulated wager deposit can be recorded and curated trading capital is ready.
 
 ## Phase 6: Game Rules Baseline And Match Readiness Gate
 
@@ -506,12 +532,14 @@ Build:
   - one agent smart account address,
   - user ENS identity,
   - agent ENS identity resolving to the agent smart account,
-  - approved external agent client or approved built-in automation mode,
+  - one-time approved external agent client through Moonjoy MCP,
   - agent execution authority when needed,
   - default strategy,
-  - enough wager funds,
-  - enough configured trading capital.
+  - enough separate wager funds to record the $10 deposit,
+  - enough value in the curated Base trading asset set.
 - Show readiness status in the setup UI before the user attempts match creation.
+- Match creation records the creator's deposit after readiness passes and before creating the match row.
+- Match join records the opponent's deposit after readiness passes and before accepting the opponent seat.
 
 Gate:
 
@@ -523,14 +551,15 @@ Gate:
 
 ## Phase 7: Match Creation With Wager Terms
 
-Goal: authenticated users with an agent can create wagered match links.
+Goal: authenticated users with a one-time MCP-approved agent can deposit the demo wager and create wagered match links.
 
 Build:
 
 - Match creator must be authenticated.
 - Match creator must have a claimed ENS name.
-- Match creator must have a resolved agent identity and approved external agent client or approved built-in automation mode.
+- Match creator must have a resolved agent identity and one-time approved external agent client through Moonjoy MCP.
 - Match creator must have a funded, live agent smart account.
+- Match creator must record the $10 wager deposit before the match is created.
 - Create a match with fixed default terms:
   - $10 wager.
   - 5-minute trading window.
@@ -538,8 +567,9 @@ Build:
   - highest normalized PnL wins.
 - The user creates match intent; the agent performs the match actions.
 - Generate a shareable match link.
-- Opponent joins only after satisfying the same identity requirements.
+- Opponent joins only after satisfying the same identity, MCP approval, funding, and wager deposit requirements.
 - Neither player chooses an agent or strategy because those are already attached to the user.
+- In the first demo, the wager deposit is a simulated backend ledger lock. When the escrow contract is ready, replace that deposit adapter with the contract deposit without changing the match creation boundary.
 
 Data model:
 
@@ -551,6 +581,7 @@ matches
   duration_seconds
   warmup_seconds
   scoring_method
+  creator_wager_deposit_id
   created_by_user_id
   created_at
   starts_at
@@ -575,6 +606,8 @@ Gate:
 - A valid user can create a match link.
 - Another valid user can join the link.
 - Both seats have live agent smart accounts.
+- The creator's wager deposit exists before the match exists.
+- The opponent's wager deposit exists before the opponent seat is accepted.
 - Neither player selects an agent or strategy during match setup.
 
 ## Phase 8: Warm-Up Stage
@@ -666,7 +699,7 @@ Build:
 - Calculate PnL USD and PnL percentage.
 - Select the winner by PnL percentage.
 - Use raw PnL USD as supporting context, not the winner criterion.
-- Record wager settlement intent after the grace window.
+- Record simulated wager settlement intent after the grace window.
 - Pay wager winnings to the winning agent smart account when escrow is enabled.
 - Attribute match win, strategy performance, and skill history to the winning agent smart account.
 - The human can withdraw from the agent smart account after settlement.
@@ -676,7 +709,7 @@ Gate:
 
 - A completed match has deterministic scores.
 - The winner can be explained from stored portfolio snapshots.
-- Wager settlement is either recorded for later escrow wiring or completed with a clear retry path when escrow is enabled.
+- Simulated wager settlement is recorded for later escrow wiring, or completed with a clear retry path when escrow is enabled.
 
 ## Phase 11: Wager Escrow Contract
 
@@ -684,7 +717,8 @@ Goal: make the $10 wager credible without coupling it to trading capital.
 
 Build:
 
-- Add a minimal escrow contract after the offchain match flow is clear.
+- Add a minimal escrow contract after the simulated wager deposit and offchain match flow are clear.
+- Replace the simulated wager deposit adapter with a real escrow deposit adapter.
 - Both agents deposit the fixed wager from their agent smart accounts.
 - The contract records match id, two agent smart account addresses, amount, and status.
 - The backend submits or proves the winner for the hackathon version.
@@ -773,14 +807,14 @@ Gate:
 5. Store the human embedded signer address separately from the agent smart account address.
 6. Block downstream setup until the authenticated user, embedded signer, agent record, and agent smart account all exist.
 7. Fix `packages/game` match duration, warm-up lifecycle, readiness terminology, and tests before route or worker code depends on those rules.
-8. Add user ENS claim/link flow.
-9. Add agent ENS mint/claim into the already-created agent smart wallet.
+8. Add Durin-backed user ENS claim/link flow.
+9. Add Durin-backed agent ENS mint/claim into the already-created agent smart wallet.
 10. Add user-owned strategy registry assigned to agents, including a default strategy.
 11. Update the agent ENS strategy text record after the default strategy manifest exists, if text writes are enabled.
 12. Add MCP authorization for external agent clients, plus Moonjoy skill/context for post-auth action selection.
-13. Add agent funding, withdrawal, and readiness tracking for wager funds and trading capital.
-14. Add a match readiness service used by both create and join flows.
-15. Add match create/join/warm-up/live/settle flow.
+13. Add agent funding, withdrawal, simulated wager deposit locking, and readiness tracking for depositable wager funds and curated trading capital.
+14. Add a match readiness service used by both create and join flows, with one-time MCP approval required.
+15. Add match create/join/warm-up/live/settle flow, creating matches only after the creator's wager deposit is recorded.
 16. Add Uniswap quote-backed simulated trades.
 17. Add scoring and replay UI.
 18. Add wager escrow contract.
@@ -790,7 +824,7 @@ Gate:
 ## Deliberate Simplifications
 
 - Start with one chain: Base.
-- Start with a curated token list.
+- Start with a curated Base trading asset set for match capital and quote-backed simulated trades.
 - Start with simulated fills from Uniswap quotes.
 - Start with one active agent per user.
 - Start with one agent smart account per user, created during signup.
@@ -802,7 +836,7 @@ Gate:
 
 ## Risks
 
-- ENS registrar work may take longer than expected, but ENS and Durin setup should not block the core development cycle.
+- Durin registrar work is required for submission. Use the already deployed Durin registry and registrar first, and only take on the custom Moonjoy registrar upgrade if it does not block the playable loop.
 - Uniswap API rate limits require caching and throttling.
 - External agents may fail to call tools reliably.
 - Wager escrow can become a time sink if built before the offchain game loop is stable.

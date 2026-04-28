@@ -33,3 +33,4 @@ broadcast/
 # Other Tooling
 opencode.json
 skills-lock.json
+.mcp.json

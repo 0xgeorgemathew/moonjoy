@@ -190,18 +190,17 @@ Build in this order unless the user explicitly redirects:
 <claude-mem-context>
 # Memory Context
 
-# [moonjoy] recent context, 2026-04-28 12:02am GMT+5:30
+# [moonjoy] recent context, 2026-04-28 7:45am GMT+5:30
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (28,436t read) | 0t work
+Stats: 50 obs (28,401t read) | 0t work
 
 ### Apr 25, 2026
 1967 8:06p 🔴 Match action rules fixed — "ready" status now exposes start_match, settlement grace boundary guard added
 1968 " ✅ Railway deployment configuration added — RAILPACK builder with bunx next start, turbo.json persistent start task
-1969 " ✅ 4 commits pushed to origin/main — working tree clean except uncommitted turbo.json/railway.json already pushed
 1973 " ✅ Moon Joy main branch fully synchronized with origin — clean working tree, 4 commits pushed
 1974 11:22p ⚖️ Moon Joy hackathon architecture — full system design with partner track integration
 1977 11:23p 🔵 Moon Joy tech stack research — MCP SDK, ENSjs, viem, Uniswap API, and Privy capabilities confirmed
@@ -251,4 +250,5 @@ Stats: 50 obs (28,436t read) | 0t work
 2056 4:50a 🔵 Moon Joy README confirmed — 103 lines with centered HTML layout
 ### Apr 28, 2026
 2057 12:00a 🔵 Documentation Review Found Ordering Inconsistencies Across Planning Docs
+2058 12:03a ✅ Execution Plan Reordering: Privy Wallet as Foundation Dependency
 </claude-mem-context>
