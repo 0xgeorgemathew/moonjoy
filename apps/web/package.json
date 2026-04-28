@@ -14,6 +14,7 @@
     "@privy-io/react-auth": "^2.15.0",
     "@privy-io/node": "^0.12.0",
     "@supabase/ssr": "^0.6.1",
+    "@moonjoy/contracts": "workspace:*",
     "@supabase/supabase-js": "^2.49.8",
     "next": "16.2.2",
     "permissionless": "^0.2.50",
