@@ -6,7 +6,7 @@
     "watchPatterns": ["apps/**", "packages/**", "railway.json", "railpack.json", "turbo.json"]
   },
   "deploy": {
-    "startCommand": "cd apps/web && bunx next start -p ${PORT}",
+    "startCommand": "bun run --cwd apps/web start -- -p ${PORT}",
     "sleepApplication": true,
     "healthcheckPath": "/",
     "healthcheckTimeout": 60,
