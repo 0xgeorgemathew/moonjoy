@@ -32,6 +32,10 @@ Moonjoy is a wagered PvP agent trading game.
 - The first demo wager is $10.
 - The wager is separate from each user's trading capital.
 - Users fund the agent smart account, and the agent deploys trading capital from that account.
+- User ENS `moonjoy:match_preference` may publish automatch defaults: match duration, bet amount, and preferred trading capital.
+- Challenge links may carry explicit settings for a specific opponent and override automatch preferences for that match.
+- Onchain state is canonical wherever it exists. Resolve ENS names, ENS records, balances, ownership, escrow deposits, escrow settlement, and transaction status from chain.
+- Do not duplicate onchain state in Supabase as canonical product state. Supabase may store app workflow state, offchain simulation data, replay snapshots, and receipt hashes only after verification.
 - Highest normalized PnL wins.
 - The winner should be selected by PnL percentage from each player's starting marked portfolio value, not raw dollar PnL.
 - Real swap execution is out of scope for the first demo.
@@ -56,15 +60,17 @@ Moonjoy is a wagered PvP agent trading game.
 
 - Use Privy for authentication and wallet creation or linking.
 - Authenticated users claim or link a Moonjoy ENS name, such as `buzz.moonjoy.eth`.
+- Resolve user ENS identity from Durin by embedded signer address instead of saving the confirmed name in the database.
 - The user's single agent gets a Privy smart wallet / smart account.
-- The agent smart account mints or claims an ENS identity, such as `agent-buzz.moonjoy.eth`.
+- After Moonjoy MCP authorization, the approved agent can mint or claim an ENS identity, such as `agent-buzz.moonjoy.eth`.
 - The agent ENS name must be derived from the human user's claimed ENS label.
 - `agent-buzz.moonjoy.eth` resolves to the agent smart account address.
 - Agent ENS records must do real product work: address resolution, ownership, MCP endpoint discovery, strategy provenance, and public match history pointers.
+- Resolve agent ENS identity and text records from Durin when gating match readiness or displaying public identity.
 - Match creation requires an authenticated user, a user ENS identity, an approved live agent identity, and a funded agent smart account.
 - The agent smart account is created during user signup before MCP authorization.
-- Agent ENS minting or claiming is an explicit setup action after smart account creation, not an MCP authorization side effect.
-- Agent authorization happens through Moonjoy MCP auth after the user has an agent smart account and identity. MCP approval lets an external client operate through Moonjoy tools; it does not provision wallets or identities.
+- Agent authorization happens through Moonjoy MCP auth after the user has an agent smart account and user ENS identity. MCP approval lets an external client operate through Moonjoy tools; it does not provision wallets.
+- Agent ENS minting or claiming is an explicit post-MCP agent action, not a hidden authorization side effect.
 - The human user creates the match intent. The agent account follows match rules, makes the wager, and trades.
 
 ## Partner Track Priorities
@@ -158,10 +164,10 @@ Moonjoy should feel lunar, competitive, tactical, and agentic. The current direc
 Build in this order unless the user explicitly redirects:
 
 1. Privy auth, embedded signer creation, one-agent-per-user record, and agent smart wallet creation during signup.
-2. User ENS claim or link flow and derived agent ENS identity resolution to the already-created agent smart account.
-3. Strategy registry and default strategy attribution.
-4. MCP authorization for external agent clients and Moonjoy skill/context setup.
-5. Agent funding, withdrawal, and match readiness tracking for wager funds and trading capital.
+2. User ENS claim or link flow and safe public user text records.
+3. MCP authorization for external agent clients and Moonjoy skill/context setup.
+4. Agent-owned ENS identity and default strategy bootstrap through approved Moonjoy tools.
+5. Agent funding display, withdrawal entry points, and match readiness checks that read current chain balances for wager funds and trading capital.
 6. Match constants and warm-up lifecycle in `packages/game`.
 7. Match create, join, warm-up, live, settle flow.
 8. Uniswap quote-backed simulated trades.
@@ -190,7 +196,7 @@ Build in this order unless the user explicitly redirects:
 <claude-mem-context>
 # Memory Context
 
-# [moonjoy] recent context, 2026-04-28 7:45am GMT+5:30
+# [moonjoy] recent context, 2026-04-28 3:23pm GMT+5:30
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE

@@ -122,7 +122,7 @@ await walletClient.writeContract({
   address: '0xe5491a3d982ef454ec99a432b213dc749b997275',
   abi: registryAbi,
   functionName: 'setText',
-  args: [buzzNode, 'moonjoy:mcp', 'https://moonjoy.app/mcp'],
+  args: [buzzNode, 'moonjoy:mcp', 'https://moonjoy.up.railway.app/mcp'],
 })
 ```
 
@@ -160,7 +160,7 @@ The `register()` function already sets coinType 60 (ETH) and the L2 chain coinTy
 |-----|--------------|---------|
 | `avatar` | ipfs://Qm... | Agent profile image |
 | `moonjoy:user` | `buzz.moonjoy.eth` | Link to human user name |
-| `moonjoy:mcp` | `https://moonjoy.app/mcp` | MCP endpoint discovery |
+| `moonjoy:mcp` | `https://moonjoy.up.railway.app/mcp` | MCP endpoint discovery |
 | `moonjoy:strategy` | `Qm...CID` | Active strategy manifest hash |
 | `moonjoy:last_match` | `uuid-of-match` | Latest match pointer |
 | `moonjoy:stats` | `ipfs://...` | Compact stats pointer |
