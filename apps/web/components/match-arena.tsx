@@ -28,7 +28,7 @@ function fmtTime(iso: string): string {
 
 export function MatchArena() {
   const { ready, authenticated, getAccessToken, login } = usePrivy();
-  const supabaseRef = useRef<ReturnType<typeof createClient> | null>(null);
+  const [supabase] = useState(() => createClient());
   const feedRef = useRef<HTMLDivElement>(null);
 
   const [messages, setMessages] = useState<DialogueMessage[]>([]);
@@ -39,10 +39,6 @@ export function MatchArena() {
   const [viewerEns, setViewerEns] = useState<string | null>(null);
   const [agentTopic, setAgentTopic] = useState<string | null>(null);
   const [accepting, setAccepting] = useState<Set<string>>(new Set());
-
-  if (!supabaseRef.current) {
-    supabaseRef.current = createClient();
-  }
 
   const addMsg = useCallback(
     (msg: DialogueMessage) => setMessages((prev) => [...prev, msg]),
@@ -123,7 +119,7 @@ export function MatchArena() {
 
   useEffect(() => {
     if (!ready || !authenticated) {
-      setLoading(false);
+      queueMicrotask(() => setLoading(false));
       return;
     }
 
@@ -157,12 +153,10 @@ export function MatchArena() {
     return () => {
       cancelled = true;
     };
-  }, [authenticated, ready]);
+  }, [addMsg, authenticated, ready, refreshAll]);
 
   useEffect(() => {
     if (!agentTopic) return;
-    const supabase = supabaseRef.current;
-    if (!supabase) return;
 
     const channel = supabase
       .channel(agentTopic)
@@ -174,12 +168,10 @@ export function MatchArena() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [agentTopic, refreshAll]);
+  }, [agentTopic, refreshAll, supabase]);
 
   useEffect(() => {
     if (!activeMatch?.id) return;
-    const supabase = supabaseRef.current;
-    if (!supabase) return;
 
     const topic = `match:${activeMatch.id}`;
     const channel = supabase
@@ -192,7 +184,7 @@ export function MatchArena() {
     return () => {
       void supabase.removeChannel(channel);
     };
-  }, [activeMatch?.id, refreshAll]);
+  }, [activeMatch?.id, refreshAll, supabase]);
 
   useEffect(() => {
     if (feedRef.current) {
@@ -464,20 +456,10 @@ function ChallengeCard({
   accepting: boolean;
   onAccept: () => void;
 }) {
-  const [flashed, setFlashed] = useState(false);
-
-  useEffect(() => {
-    if (accepting) {
-      const t = setTimeout(() => setFlashed(true), 50);
-      return () => clearTimeout(t);
-    }
-    setFlashed(false);
-  }, [accepting]);
-
   return (
     <div
       className={`animate-msg-enter animate-challenge-pulse neo-card opacity-0 p-4 ${
-        flashed ? "animate-accept-flash" : ""
+        accepting ? "animate-accept-flash" : ""
       }`}
       style={{ animationDelay: delay }}
     >
