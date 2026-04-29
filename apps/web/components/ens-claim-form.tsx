@@ -13,11 +13,17 @@ type ClaimStep = "idle" | "checking" | "available" | "preparing" | "signing" | "
 
 interface EnsClaimFormProps {
   embeddedAddress: string;
+  smartAccountAddress: string;
   accessToken: string | null;
   onClaimed: (ensName: string) => void;
 }
 
-export function EnsClaimForm({ embeddedAddress, accessToken, onClaimed }: EnsClaimFormProps) {
+export function EnsClaimForm({
+  embeddedAddress,
+  smartAccountAddress,
+  accessToken,
+  onClaimed,
+}: EnsClaimFormProps) {
   const [label, setLabel] = useState("");
   const [step, setStep] = useState<ClaimStep>("idle");
   const [error, setError] = useState<string | null>(null);
@@ -78,7 +84,7 @@ export function EnsClaimForm({ embeddedAddress, accessToken, onClaimed }: EnsCla
   }, [debouncedLabel, accessToken]);
 
   const handleSubmit = useCallback(async () => {
-    if (!accessToken || !lowerLabel) return;
+    if (!accessToken || !lowerLabel || !smartAccountAddress) return;
     setStep("preparing");
     setError(null);
 
@@ -92,6 +98,7 @@ export function EnsClaimForm({ embeddedAddress, accessToken, onClaimed }: EnsCla
         body: JSON.stringify({
           label: lowerLabel,
           ownerAddress: embeddedAddress,
+          smartAccountAddress,
         }),
       });
       const claimData = await claimRes.json();
@@ -105,8 +112,8 @@ export function EnsClaimForm({ embeddedAddress, accessToken, onClaimed }: EnsCla
 
       const callData = encodeFunctionData({
         abi: durinRegistrarAbi,
-        functionName: "register",
-        args: [lowerLabel, embeddedAddress as Address],
+        functionName: "registerUser",
+        args: [lowerLabel, "", smartAccountAddress as Address],
       });
 
       const txResult = await sendTransaction(
@@ -150,7 +157,14 @@ export function EnsClaimForm({ embeddedAddress, accessToken, onClaimed }: EnsCla
       setStep("failed");
       setError(err instanceof Error ? err.message : "Transaction failed");
     }
-  }, [accessToken, lowerLabel, embeddedAddress, sendTransaction, onClaimed]);
+  }, [
+    accessToken,
+    lowerLabel,
+    embeddedAddress,
+    smartAccountAddress,
+    sendTransaction,
+    onClaimed,
+  ]);
 
   const isBusy = derivedStep === "checking" || derivedStep === "preparing" || derivedStep === "signing" || derivedStep === "confirming";
 
@@ -200,7 +214,7 @@ export function EnsClaimForm({ embeddedAddress, accessToken, onClaimed }: EnsCla
         <button
           type="button"
           onClick={handleSubmit}
-          disabled={derivedStep !== "available" || isBusy}
+          disabled={derivedStep !== "available" || isBusy || !smartAccountAddress}
           className="neo-btn px-6 py-3.5 font-display text-sm font-extrabold uppercase tracking-wider disabled:opacity-40 disabled:cursor-not-allowed"
         >
           {isBusy ? "..." : "Claim"}

@@ -3,8 +3,10 @@ import { getAuthenticatedUserId, AuthError } from "@/lib/auth/server";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   getFullNameForAddress,
+  resolveAddress,
   resolveTextRecord,
 } from "@/lib/services/ens-service";
+import { deriveAgentLabel } from "@/lib/services/agent-bootstrap-utils";
 import { extractEnsLabel } from "@/lib/types/ens";
 import type { Address } from "viem";
 
@@ -26,7 +28,7 @@ export async function GET(request: Request) {
 
   const { data: user } = await supabase
     .from("users")
-    .select("embedded_signer_address")
+    .select("id, embedded_signer_address")
     .eq("privy_user_id", privyUserId)
     .single();
 
@@ -34,9 +36,35 @@ export async function GET(request: Request) {
     return NextResponse.json({ error: "User not found" }, { status: 404 });
   }
 
+  const { data: agent } = user
+    ? await supabase
+        .from("agents")
+        .select("id, smart_account_address")
+        .eq("user_id", user.id)
+        .eq("status", "active")
+        .maybeSingle()
+    : { data: null };
+
   const userEnsName = user.embedded_signer_address
     ? await getFullNameForAddress(user.embedded_signer_address as Address)
     : null;
+  const expectedAgent =
+    userEnsName ? deriveAgentLabel(extractEnsLabel(userEnsName)) : null;
+  const expectedAgentEnsName = expectedAgent?.ok ? expectedAgent.ensName : null;
+  const agentEnsName =
+    agent?.smart_account_address
+      ? await getFullNameForAddress(agent.smart_account_address as Address)
+      : null;
+  const agentResolvesToSmartWallet =
+    expectedAgent?.ok && agent?.smart_account_address
+      ? (await resolveAddress(expectedAgent.label))?.toLowerCase() ===
+        agent.smart_account_address.toLowerCase()
+      : false;
+
+  const pendingAgentTransaction =
+    agent?.id && expectedAgentEnsName !== agentEnsName
+      ? await getPendingAgentBootstrapTransaction(supabase, agent.id)
+      : null;
 
   const textRecords: { record_key: string; record_value: string }[] = [];
   if (userEnsName) {
@@ -57,6 +85,101 @@ export async function GET(request: Request) {
   return NextResponse.json({
     userEnsName,
     embeddedSignerAddress: user.embedded_signer_address,
+    agentEnsName,
+    expectedAgentEnsName,
+    agentRegistrationState: getAgentRegistrationState({
+      userEnsName,
+      smartAccountAddress: agent?.smart_account_address ?? null,
+      agentEnsName,
+      expectedAgentEnsName,
+      pending: Boolean(pendingAgentTransaction),
+      agentResolvesToSmartWallet,
+    }),
+    pendingAgentTransaction,
     textRecords,
   });
+}
+
+async function getPendingAgentBootstrapTransaction(
+  supabase: ReturnType<typeof createAdminClient>,
+  agentId: string,
+) {
+  const since = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+  const { data } = await supabase
+    .from("mcp_events")
+    .select("event_type, payload, created_at")
+    .eq("agent_id", agentId)
+    .in("event_type", ["bootstrap.tx_submitted", "bootstrap.tx_confirmed"])
+    .gte("created_at", since)
+    .order("created_at", { ascending: false })
+    .limit(40);
+
+  const confirmedIds = new Set<string>();
+  for (const row of data ?? []) {
+    if (row.event_type !== "bootstrap.tx_confirmed") continue;
+    const payload =
+      row.payload && typeof row.payload === "object"
+        ? (row.payload as Record<string, unknown>)
+        : {};
+    const id =
+      readPayloadString(payload, "userOperationHash") ??
+      readPayloadString(payload, "transactionId") ??
+      readPayloadString(payload, "txHash");
+    if (id) confirmedIds.add(id);
+  }
+
+  for (const row of data ?? []) {
+    if (row.event_type !== "bootstrap.tx_submitted") continue;
+    const payload =
+      row.payload && typeof row.payload === "object"
+        ? (row.payload as Record<string, unknown>)
+        : {};
+    const id =
+      readPayloadString(payload, "userOperationHash") ??
+      readPayloadString(payload, "transactionId") ??
+      readPayloadString(payload, "txHash");
+    if (!id || confirmedIds.has(id)) continue;
+
+    return {
+      txHash: readPayloadString(payload, "txHash"),
+      userOperationHash: readPayloadString(payload, "userOperationHash"),
+      submittedAt: row.created_at,
+    };
+  }
+
+  return null;
+}
+
+function readPayloadString(
+  payload: Record<string, unknown>,
+  key: string,
+): string | null {
+  const value = payload[key];
+  return typeof value === "string" && value.length > 0 ? value : null;
+}
+
+function getAgentRegistrationState(params: {
+  userEnsName: string | null;
+  smartAccountAddress: string | null;
+  agentEnsName: string | null;
+  expectedAgentEnsName: string | null;
+  pending: boolean;
+  agentResolvesToSmartWallet: boolean;
+}): "blocked" | "action_required" | "pending" | "ready" {
+  if (!params.userEnsName || !params.smartAccountAddress || !params.expectedAgentEnsName) {
+    return "blocked";
+  }
+
+  if (
+    params.agentEnsName === params.expectedAgentEnsName &&
+    params.agentResolvesToSmartWallet
+  ) {
+    return "ready";
+  }
+
+  if (params.pending) {
+    return "pending";
+  }
+
+  return "action_required";
 }

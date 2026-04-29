@@ -9,14 +9,15 @@ import { durinRegistryAbi, DURIN_L2_REGISTRY_ADDRESS } from "@moonjoy/contracts"
 import { getNameNode } from "@/lib/services/ens-service";
 
 type PreferenceStatus = "idle" | "signing" | "confirming" | "confirmed" | "failed";
-type MatchDuration = 3 | 5 | 10;
+type MatchDuration = "any" | 3 | 5 | 10;
 type WagerUsd = 10 | 25 | 50;
-type TradingCapitalUsd = 100 | 250 | 500;
+type TradingCapitalUsd = "any" | 100 | 250 | 500;
 
 interface MatchPreference {
   durationMinutes: MatchDuration;
   wagerUsd: WagerUsd;
-  tradingCapitalUsd: TradingCapitalUsd;
+  capitalMinUsd: TradingCapitalUsd;
+  capitalMaxUsd: TradingCapitalUsd;
 }
 
 interface EnsUserRecordsFormProps {
@@ -31,24 +32,55 @@ const RECORD_KEY = "moonjoy:match_preference";
 const DEFAULT_PREFERENCE: MatchPreference = {
   durationMinutes: 5,
   wagerUsd: 10,
-  tradingCapitalUsd: 100,
+  capitalMinUsd: "any",
+  capitalMaxUsd: 250,
 };
 
-const DURATION_OPTIONS: readonly MatchDuration[] = [3, 5, 10];
+const DURATION_OPTIONS: readonly MatchDuration[] = ["any", 3, 5, 10];
 const WAGER_OPTIONS: readonly WagerUsd[] = [10, 25, 50];
-const CAPITAL_OPTIONS: readonly TradingCapitalUsd[] = [100, 250, 500];
+const CAPITAL_OPTIONS: readonly TradingCapitalUsd[] = ["any", 100, 250, 500];
+
+function normalizePreference(preference: MatchPreference): MatchPreference {
+  const { capitalMinUsd, capitalMaxUsd } = preference;
+  if (
+    capitalMinUsd !== "any" &&
+    capitalMaxUsd !== "any" &&
+    capitalMinUsd > capitalMaxUsd
+  ) {
+    return {
+      ...preference,
+      capitalMaxUsd: capitalMinUsd,
+    };
+  }
+
+  return preference;
+}
 
 function stringifyPreference(preference: MatchPreference): string {
   return JSON.stringify({
-    schema: "moonjoy.match_preference.v1",
-    matchmaking: "auto",
-    durationMinutes: preference.durationMinutes,
-    wagerUsd: preference.wagerUsd,
-    tradingCapitalUsd: preference.tradingCapitalUsd,
+    duration:
+      preference.durationMinutes === "any"
+        ? "any"
+        : String(preference.durationMinutes * 60),
+    wagerUsd: String(preference.wagerUsd),
+    capitalUsd: {
+      min:
+        preference.capitalMinUsd === "any"
+          ? "any"
+          : String(preference.capitalMinUsd),
+      max:
+        preference.capitalMaxUsd === "any"
+          ? "any"
+          : String(preference.capitalMaxUsd),
+    },
   });
 }
 
 function parseDuration(value: unknown): MatchDuration {
+  if (value === "any") return "any";
+  if (value === "180") return 3;
+  if (value === "300") return 5;
+  if (value === "600") return 10;
   if (value === "3m") return 3;
   if (value === "5m") return 5;
   if (value === "10m") return 10;
@@ -57,13 +89,23 @@ function parseDuration(value: unknown): MatchDuration {
 }
 
 function parseWager(value: unknown): WagerUsd {
+  if (value === "10") return 10;
+  if (value === "25") return 25;
+  if (value === "50") return 50;
   if (WAGER_OPTIONS.includes(value as WagerUsd)) return value as WagerUsd;
   return DEFAULT_PREFERENCE.wagerUsd;
 }
 
-function parseCapital(value: unknown): TradingCapitalUsd {
+function parseCapital(
+  value: unknown,
+  fallback: TradingCapitalUsd = DEFAULT_PREFERENCE.capitalMaxUsd,
+): TradingCapitalUsd {
+  if (value === "any") return "any";
+  if (value === "100") return 100;
+  if (value === "250") return 250;
+  if (value === "500") return 500;
   if (CAPITAL_OPTIONS.includes(value as TradingCapitalUsd)) return value as TradingCapitalUsd;
-  return DEFAULT_PREFERENCE.tradingCapitalUsd;
+  return fallback;
 }
 
 function preferenceFromRecord(recordValue: string | undefined): MatchPreference {
@@ -75,11 +117,28 @@ function preferenceFromRecord(recordValue: string | undefined): MatchPreference 
       durationMinutes?: unknown;
       wagerUsd?: unknown;
       tradingCapitalUsd?: unknown;
+      capitalUsd?: {
+        min?: unknown;
+        max?: unknown;
+      };
     };
+      const legacyCapital = parseCapital(
+        parsed.tradingCapitalUsd,
+        DEFAULT_PREFERENCE.capitalMaxUsd,
+      );
     return {
       durationMinutes: parseDuration(parsed.durationMinutes ?? parsed.duration),
       wagerUsd: parseWager(parsed.wagerUsd),
-      tradingCapitalUsd: parseCapital(parsed.tradingCapitalUsd),
+      capitalMinUsd: parseCapital(
+        parsed.capitalUsd?.min,
+        DEFAULT_PREFERENCE.capitalMinUsd,
+      ),
+      capitalMaxUsd: parseCapital(
+        parsed.capitalUsd?.max,
+        legacyCapital === "any"
+          ? DEFAULT_PREFERENCE.capitalMaxUsd
+          : legacyCapital,
+      ),
     };
   } catch {
     return DEFAULT_PREFERENCE;
@@ -107,7 +166,7 @@ export function EnsUserRecordsForm({
   const isSaved = status === "confirmed" && recordValue === savedRecordValue;
 
   function updatePreference(update: Partial<MatchPreference>) {
-    const next = { ...preference, ...update };
+    const next = normalizePreference({ ...preference, ...update });
     setPreference(next);
     setStatus(stringifyPreference(next) === savedRecordValue ? "confirmed" : "idle");
     setError(null);
@@ -188,22 +247,17 @@ export function EnsUserRecordsForm({
   }, [getAccessToken, wallets, sendTransaction, embeddedAddress, label, recordValue, ensName, preference]);
 
   return (
-    <div className="space-y-5">
-      <div>
-        <p className="font-display text-sm font-bold uppercase tracking-wider text-black">
-          Matchmaking Preferences
-        </p>
-        <p className="mt-1 font-body text-xs text-gray-500">
-          Public defaults for automatch. Challenge links can still use custom settings.
-        </p>
-      </div>
+    <div className="space-y-2">
+      <p className="font-display text-sm font-bold uppercase tracking-wider text-black">
+        Matchmaking Preferences
+      </p>
 
-      <div className="space-y-5">
+      <div className="space-y-1">
         <PreferenceButtonGroup
           label="Duration"
           value={preference.durationMinutes}
           options={DURATION_OPTIONS}
-          format={(value) => `${value}m`}
+          format={(value) => (value === "any" ? "Any" : `${value}m`)}
           disabled={isBusy}
           onChange={(durationMinutes) => updatePreference({ durationMinutes })}
         />
@@ -216,12 +270,20 @@ export function EnsUserRecordsForm({
           onChange={(wagerUsd) => updatePreference({ wagerUsd })}
         />
         <PreferenceButtonGroup
-          label="Capital"
-          value={preference.tradingCapitalUsd}
+          label="Min"
+          value={preference.capitalMinUsd}
           options={CAPITAL_OPTIONS}
-          format={(value) => `$${value}`}
+          format={formatCapitalOption}
           disabled={isBusy}
-          onChange={(tradingCapitalUsd) => updatePreference({ tradingCapitalUsd })}
+          onChange={(capitalMinUsd) => updatePreference({ capitalMinUsd })}
+        />
+        <PreferenceButtonGroup
+          label="Max"
+          value={preference.capitalMaxUsd}
+          options={CAPITAL_OPTIONS}
+          format={formatCapitalOption}
+          disabled={isBusy}
+          onChange={(capitalMaxUsd) => updatePreference({ capitalMaxUsd })}
         />
       </div>
 
@@ -229,7 +291,7 @@ export function EnsUserRecordsForm({
         type="button"
         onClick={handleSave}
         disabled={isBusy || isSaved}
-        className="neo-btn-secondary w-full px-4 py-3 font-display text-xs font-bold uppercase tracking-wider disabled:cursor-not-allowed disabled:opacity-40"
+        className="self-start rounded-lg border-2 border-black bg-white px-4 py-1.5 font-display text-base font-bold uppercase tracking-wider shadow-[3px_3px_0_0_var(--artemis-blue)] transition-all disabled:cursor-not-allowed disabled:opacity-40 hover:shadow-[1px_1px_0_0_var(--artemis-blue)] hover:translate-x-[2px] hover:translate-y-[2px] active:shadow-none active:translate-x-[3px] active:translate-y-[3px]"
       >
         {status === "signing" ? "Sign Record" : status === "confirming" ? "Verifying" : isSaved ? "Saved" : "Save Preference"}
       </button>
@@ -243,7 +305,11 @@ export function EnsUserRecordsForm({
   );
 }
 
-function PreferenceButtonGroup<T extends number>({
+function formatCapitalOption(value: TradingCapitalUsd): string {
+  return value === "any" ? "Any" : `$${value}`;
+}
+
+function PreferenceButtonGroup<T extends string | number>({
   label,
   value,
   options,
@@ -259,11 +325,11 @@ function PreferenceButtonGroup<T extends number>({
   onChange: (value: T) => void;
 }) {
   return (
-    <div className="flex items-center gap-4">
-      <span className="w-20 shrink-0 font-label text-[10px] uppercase tracking-wider text-gray-500">
+    <div className="flex items-center gap-3">
+      <span className="w-14 shrink-0 font-label text-[10px] uppercase tracking-wider text-gray-500">
         {label}
       </span>
-      <div className="grid grid-cols-3 gap-3 flex-1">
+      <div className={`grid gap-1.5 ${options.length > 3 ? "grid-cols-4" : "grid-cols-3"}`}>
         {options.map((option) => {
           const selected = value === option;
           return (
@@ -272,7 +338,7 @@ function PreferenceButtonGroup<T extends number>({
               type="button"
               onClick={() => onChange(option)}
               disabled={disabled}
-              className={`rounded-xl border-2 border-black px-3 py-3 font-display text-xs font-bold uppercase tracking-wider transition-colors disabled:opacity-50 ${
+              className={`rounded-lg border-2 border-black px-2 py-1 font-display text-sm font-bold uppercase tracking-tight shadow-[2px_2px_0_0_var(--artemis-blue)] transition-all disabled:opacity-50 active:shadow-none active:translate-x-[2px] active:translate-y-[2px] ${
                 selected ? "bg-artemis-red text-white" : "bg-white text-black hover:bg-gray-100"
               }`}
             >

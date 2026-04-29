@@ -54,7 +54,7 @@ export async function POST(request: Request) {
 
   const { data: user } = await supabase
     .from("users")
-    .select("embedded_signer_address")
+    .select("id, embedded_signer_address")
     .eq("privy_user_id", privyUserId)
     .single();
 
@@ -105,19 +105,20 @@ export async function POST(request: Request) {
       args = decoded.args ?? [];
     } catch {
       return NextResponse.json(
-        { error: "Could not decode transaction calldata as register()" },
+        { error: "Could not decode transaction calldata as registerUser()" },
         { status: 400 },
       );
     }
 
-    if (functionName !== "register") {
+    if (functionName !== "registerUser") {
       return NextResponse.json(
-        { error: "Transaction is not a register() call" },
+        { error: "Transaction is not a registerUser() call" },
         { status: 400 },
       );
     }
 
-    const [txLabel, txOwner] = args as [string, Address];
+    const [txLabel] = args as [string, string];
+    const [, , txAgentBootstrapWallet] = args as [string, string, Address];
 
     if (txLabel.toLowerCase() !== label.toLowerCase()) {
       return NextResponse.json(
@@ -126,9 +127,36 @@ export async function POST(request: Request) {
       );
     }
 
-    if (txOwner.toLowerCase() !== user.embedded_signer_address.toLowerCase()) {
+    if (tx.from.toLowerCase() !== user.embedded_signer_address.toLowerCase()) {
       return NextResponse.json(
-        { error: "Transaction owner does not match your embedded signer" },
+        { error: "Transaction sender does not match your embedded signer EOA" },
+        { status: 400 },
+      );
+    }
+
+    const { data: agent } = await supabase
+      .from("agents")
+      .select("smart_account_address")
+      .eq("user_id", user.id)
+      .eq("status", "active")
+      .maybeSingle();
+
+    if (!agent?.smart_account_address) {
+      return NextResponse.json(
+        { error: "Active agent smart wallet is missing" },
+        { status: 409 },
+      );
+    }
+
+    if (
+      txAgentBootstrapWallet.toLowerCase() !==
+      agent.smart_account_address.toLowerCase()
+    ) {
+      return NextResponse.json(
+        {
+          error:
+            "Transaction bootstrap wallet does not match your active agent smart wallet",
+        },
         { status: 400 },
       );
     }

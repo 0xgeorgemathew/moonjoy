@@ -29,6 +29,7 @@ export async function resolveUser(userId: string): Promise<{
     if (!ensName) {
       return { ensName: null, address: embeddedAddress };
     }
+    // resolveAddress is cached, so repeated calls across a request are free.
     const address = await resolveAddress(extractEnsLabel(ensName));
     return { ensName, address };
   } catch {

@@ -6,8 +6,7 @@ import {
   getFullNameForAddress,
   validateEnsLabel,
 } from "@/lib/services/ens-service";
-import { isEvmAddress } from "@/lib/services/agent-wallet-service";
-import type { Address } from "viem";
+import { isAddress, type Address } from "viem";
 
 export async function POST(request: Request) {
   let privyUserId: string;
@@ -21,22 +20,33 @@ export async function POST(request: Request) {
     );
   }
 
-  let body: { label?: string; ownerAddress?: string };
+  let body: {
+    label?: string;
+    ownerAddress?: string;
+    smartAccountAddress?: string;
+  };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON body" }, { status: 400 });
   }
 
-  const { label, ownerAddress } = body;
+  const { label, ownerAddress, smartAccountAddress } = body;
 
   if (!label || typeof label !== "string") {
     return NextResponse.json({ error: "Label is required" }, { status: 400 });
   }
 
-  if (!ownerAddress || !isEvmAddress(ownerAddress)) {
+  if (!ownerAddress || !isAddress(ownerAddress)) {
     return NextResponse.json(
       { error: "Valid owner address is required" },
+      { status: 400 },
+    );
+  }
+
+  if (!smartAccountAddress || !isAddress(smartAccountAddress)) {
+    return NextResponse.json(
+      { error: "Valid smart wallet address is required" },
       { status: 400 },
     );
   }
@@ -50,7 +60,7 @@ export async function POST(request: Request) {
 
   const { data: user } = await supabase
     .from("users")
-    .select("embedded_signer_address")
+    .select("id, embedded_signer_address")
     .eq("privy_user_id", privyUserId)
     .single();
 
@@ -64,6 +74,30 @@ export async function POST(request: Request) {
   ) {
     return NextResponse.json(
       { error: "Owner address must match your embedded signer address" },
+      { status: 403 },
+    );
+  }
+
+  const { data: agent } = await supabase
+    .from("agents")
+    .select("smart_account_address")
+    .eq("user_id", user.id)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (!agent?.smart_account_address) {
+    return NextResponse.json(
+      { error: "Agent smart wallet must exist before claiming ENS" },
+      { status: 409 },
+    );
+  }
+
+  if (
+    agent.smart_account_address.toLowerCase() !==
+    (smartAccountAddress as Address).toLowerCase()
+  ) {
+    return NextResponse.json(
+      { error: "Smart wallet address does not match your active agent wallet" },
       { status: 403 },
     );
   }
