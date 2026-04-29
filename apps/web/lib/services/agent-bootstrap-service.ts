@@ -118,7 +118,7 @@ export type BootstrapRecommendation =
       status: "ready";
       step: "none";
       toolName: null;
-      args: {};
+      args: Record<string, never>;
       reason: string;
       canRunAutomatically: false;
     }
@@ -126,7 +126,7 @@ export type BootstrapRecommendation =
       status: "pending";
       step: "claim_agent_identity";
       toolName: null;
-      args: {};
+      args: Record<string, never>;
       reason: string;
       canRunAutomatically: false;
       pendingTransactions: BootstrapPendingTransaction[];
@@ -135,7 +135,7 @@ export type BootstrapRecommendation =
       status: "blocked";
       step: "claim_agent_identity";
       toolName: "moonjoy_claim_agent_identity";
-      args: {};
+      args: Record<string, never>;
       reason: string;
       canRunAutomatically: false;
     }
@@ -143,7 +143,7 @@ export type BootstrapRecommendation =
       status: "actionable";
       step: "claim_agent_identity";
       toolName: "moonjoy_claim_agent_identity";
-      args: {};
+      args: Record<string, never>;
       reason: string;
       canRunAutomatically: true;
     }

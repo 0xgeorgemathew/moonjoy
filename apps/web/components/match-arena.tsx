@@ -123,9 +123,11 @@ export function MatchArena() {
       return;
     }
 
-    setMessages([
-      { type: "system", text: "Connecting to arena...", ts: nowTs() },
-    ]);
+    queueMicrotask(() => {
+      setMessages([
+        { type: "system", text: "Connecting to arena...", ts: nowTs() },
+      ]);
+    });
 
     let cancelled = false;
 
