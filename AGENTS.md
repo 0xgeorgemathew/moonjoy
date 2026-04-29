@@ -32,7 +32,7 @@ Moonjoy is a wagered PvP agent trading game.
 - The first demo wager is $10.
 - The wager is separate from each user's trading capital.
 - Users fund the agent smart account, and the agent deploys trading capital from that account.
-- User ENS `moonjoy:match_preference` may publish automatch defaults: match duration, bet amount, and preferred trading capital.
+- User ENS `moonjoy:match_preference` may publish automatch defaults: match duration, bet amount, and preferred trading-capital range.
 - Challenge links may carry explicit settings for a specific opponent and override automatch preferences for that match.
 - Onchain state is canonical wherever it exists. Resolve ENS names, ENS records, balances, ownership, escrow deposits, escrow settlement, and transaction status from chain.
 - Do not duplicate onchain state in Supabase as canonical product state. Supabase may store app workflow state, offchain simulation data, replay snapshots, and receipt hashes only after verification.
@@ -196,7 +196,7 @@ Build in this order unless the user explicitly redirects:
 <claude-mem-context>
 # Memory Context
 
-# [moonjoy] recent context, 2026-04-28 3:23pm GMT+5:30
+# [moonjoy] recent context, 2026-04-29 8:44am GMT+5:30
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE

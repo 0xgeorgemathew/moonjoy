@@ -10,7 +10,7 @@ This plan is intentionally sequential. Each phase has one main outcome and a gat
 - The wager is fixed at $10 for the first demo version.
 - The wager is separate from each user's trading capital.
 - Users may bring and deploy trading capital from a curated Base asset set.
-- User ENS `moonjoy:match_preference` can publish automatch defaults: match duration, bet amount, and preferred trading capital.
+- User ENS `moonjoy:match_preference` can publish automatch defaults: match duration, bet amount, and preferred trading-capital range.
 - Challenge links can carry explicit settings for a specific opponent and override public automatch preferences for that match.
 - Onchain state is the source of truth wherever it exists: ENS names, ENS address resolution, ENS text records, wallet balances, token ownership, escrow deposits, escrow settlement, and transaction success.
 - The database must not duplicate onchain state as canonical product state. It may store app-only workflow state, offchain simulation data, and historical snapshots for replay.
@@ -106,21 +106,37 @@ Build:
 - The user's single agent later mints or claims an agent name, such as `agent-buzz.moonjoy.eth`, into the already-created agent smart wallet after MCP authorization.
 - Use the deployed Durin setup in `/Users/george/Workspace/durin` and the Moonjoy ops notes in `docs/ens-durin-infrastructure.md`.
 - Agent names resolve to agent-controlled addresses.
-- ENS records are used for real product behavior: ownership, agent discovery, MCP endpoint discovery, strategy provenance, and public match history pointers.
+- ENS records are used for real product behavior: ownership, human-agent linkage, address discovery, strategy provenance, and public match history pointers.
 
 Target records:
 
 ```txt
 addr                 agent address
-avatar               agent image or generated profile asset
 moonjoy:user         buzz.moonjoy.eth
-moonjoy:mcp          https://moonjoy.up.railway.app/mcp
 moonjoy:strategy     active strategy manifest hash or CID
 moonjoy:last_match   latest match id
 moonjoy:stats        compact stats pointer
 ```
 
-These records can be filled incrementally. User-owned text records can be written during user ENS setup. Agent records such as `addr`, `moonjoy:user`, `moonjoy:mcp`, and `moonjoy:strategy` belong after MCP authorization, when the agent can establish its own identity and default strategy. `moonjoy:last_match` and richer stats pointers should be written after matches exist.
+These records can be filled incrementally. User-owned text records can be written during user ENS setup. Agent records such as `addr`, `moonjoy:user`, and `moonjoy:strategy` belong after MCP authorization, when the agent can establish its own identity and default strategy. `moonjoy:last_match` and richer stats pointers should be written after matches exist.
+
+Recommended `moonjoy:match_preference` JSON shape:
+
+```json
+{
+  "duration": "any",
+  "wagerUsd": "10",
+  "capitalUsd": {
+    "min": "any",
+    "max": "250"
+  }
+}
+```
+
+Rules:
+- `duration` supports `"any"` or a concrete duration in seconds such as `"300"` or `"600"`.
+- `capitalUsd.min` and `capitalUsd.max` support `"any"` or concrete USD bounds.
+- Challenge-link terms still override automatch preferences for a specific match.
 
 Durin is not a stretch item. The demo should use the deployed Base Sepolia Durin registry and registrar for user and agent subnames. If the custom Moonjoy registrar upgrade is not ready, keep the first demo on the currently deployed Durin registrar, but do not replace Durin with cosmetic offchain ENS labels.
 
@@ -335,7 +351,7 @@ Build:
 - Validate label availability.
 - Resolve the claimed user name after registration.
 - Do not store confirmed ENS names in the database. Resolve them from Durin by embedded signer address.
-- Optionally write one safe public user text record for `moonjoy:match_preference`, containing automatch defaults for duration, bet amount, and trading capital.
+- Optionally write one safe public user text record for `moonjoy:match_preference`, containing automatch defaults for duration, bet amount, and trading-capital range.
 - Do not cache user ENS text records in the database. Read `moonjoy:match_preference` from Durin when needed.
 - Reserve agent identity, MCP discovery, strategy, stats, and match-history text record keys, but do not require them before the agent is authorized.
 - Pay or sponsor setup gas through the human embedded signer, Privy/paymaster support, or another explicit setup sponsor. Do not require user-supplied trading capital before ENS setup.

@@ -1,27 +1,43 @@
-# Moonjoy Agent Playground
+# Moonjoy Playground
 
-This folder is for testing Codex, Claude, opencode, and other coding agents against the same Moonjoy context without touching production app code.
+This folder exists to launch agents against `moonjoy_local` with the right default behavior.
 
-Use it to compare:
+## What This Folder Is For
 
-- how each agent reads Moonjoy product rules,
-- how each agent chooses next actions after MCP authorization,
-- how each agent proposes strategies,
-- how each agent explains match state, ENS identity, wallet ownership, and Uniswap quote-backed trades.
+- start an agent in a directory that already contains the Moonjoy MCP instructions
+- make the agent operate through ENS-discovered identity
+- make the agent move match state forward without hesitation
+- let Streamable HTTP clients use SSE match notifications as wakeups
+- compare how different agent clients behave under the same MCP surface
+
+## Required Behavior
+
+On every session, the agent should:
+
+1. connect to `moonjoy_local`
+2. call `moonjoy_auto`
+3. if `moonjoy_auto` returns `advanced`, call it again
+4. if a joinable match exists, accept it
+5. if no joinable match exists and no active match exists, create one
+6. if `moonjoy_get_match_state` reports `nextRecommendedTool: "moonjoy_auto"` or `joinableChallengeCount > 0`, call `moonjoy_auto`
+7. if the match is live, call `moonjoy_play_turn` before asking or reporting
+8. call `moonjoy_heartbeat` between polls and use token/strategy tools while waiting
+9. stop only on `ready_waiting`, `blocked`, or a tool failure
+
+Bootstrapped agents should not keep re-checking setup as the main task. Identity discovery happens through ENS via Moonjoy tools. Once identity is ready, the agent should focus on match progress.
+
+If the client supports Streamable HTTP SSE, keep the session GET stream open. Moonjoy emits `moonjoy.match` notifications for match state changes; agents should react by calling `moonjoy_auto`.
+
+If both agents have open challenges, Moonjoy's coordination fields decide who yields. The canonical challenge holder waits; the yielding agent cancels its own challenge and accepts the canonical one.
+
+## Files
+
+- `AGENTS.md`: launch instructions and default operating loop
+- `agent-context.md`: short execution policy for the agent
+- `test-prompts.md`: minimal prompts for testing agent behavior
 
 ## Boundaries
 
-- Playground files are test inputs and scratch prompts.
-- Do not import playground files from `apps/*` or `packages/*`.
-- Do not store secrets, API keys, private wallet keys, or live auth tokens here.
-- Keep examples small enough that agents can load them directly.
-
-## Suggested Tests
-
-1. Ask the agent to explain the Moonjoy wallet model.
-2. Ask the agent what it should do after MCP authorization.
-3. Ask the agent to create a strategy for a five-minute match.
-4. Ask the agent to decide whether to mint the agent ENS name, create a strategy, request a Uniswap quote, or wait.
-5. Ask the agent to summarize a simulated match replay and identify the winning agent by normalized PnL.
-
-Start with [agent-context.md](./agent-context.md), then add tool outputs or match state snapshots as separate files when testing.
+- do not put secrets or tokens here
+- do not import these files into app code
+- keep the instructions short enough that a fresh agent can load them directly
