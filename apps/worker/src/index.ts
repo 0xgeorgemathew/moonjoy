@@ -1,13 +1,17 @@
-import { getAvailableMatchActions, type MatchReadiness } from "@moonjoy/game";
-
 export type WorkerHealth = {
   status: "ready";
-  availableActions: string[];
+  responsibilities: string[];
 };
 
-export function getWorkerHealth(readiness: MatchReadiness): WorkerHealth {
+export function getWorkerHealth(): WorkerHealth {
   return {
     status: "ready",
-    availableActions: getAvailableMatchActions("accepted", readiness),
+    responsibilities: [
+      "match timers",
+      "quote refresh",
+      "valuation refresh",
+      "mandatory window assessment",
+      "settlement reconciliation",
+    ],
   };
 }
