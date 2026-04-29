@@ -7,7 +7,6 @@ begin
       id uuid primary key default gen_random_uuid(),
       privy_user_id text not null unique,
       embedded_signer_address text,
-      ens_name text,
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now()
     );
@@ -17,9 +16,6 @@ begin
     end if;
     if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'users' and column_name = 'embedded_signer_address') then
       alter table users add column embedded_signer_address text;
-    end if;
-    if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'users' and column_name = 'ens_name') then
-      alter table users add column ens_name text;
     end if;
     if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'users' and column_name = 'created_at') then
       alter table users add column created_at timestamptz not null default now();
@@ -42,7 +38,6 @@ begin
       user_id uuid not null references users(id) on delete cascade,
       smart_account_address text,
       setup_status text not null default 'incomplete',
-      ens_name text,
       status text not null default 'active',
       created_at timestamptz not null default now(),
       updated_at timestamptz not null default now(),
@@ -55,9 +50,6 @@ begin
     end if;
     if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'agents' and column_name = 'setup_status') then
       alter table agents add column setup_status text not null default 'incomplete';
-    end if;
-    if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'agents' and column_name = 'ens_name') then
-      alter table agents add column ens_name text;
     end if;
     if not exists (select 1 from information_schema.columns where table_schema = 'public' and table_name = 'agents' and column_name = 'status') then
       alter table agents add column status text not null default 'active';
@@ -97,14 +89,18 @@ alter table agents enable row level security;
 
 create policy "Users can read own row"
   on users for select
-  using (auth.jwt() ->> 'sub' = privy_user_id);
+  to authenticated
+  using (((select auth.jwt()) ->> 'sub') = privy_user_id);
 
 create policy "Users can update own row"
   on users for update
-  using (auth.jwt() ->> 'sub' = privy_user_id);
+  to authenticated
+  using (((select auth.jwt()) ->> 'sub') = privy_user_id)
+  with check (((select auth.jwt()) ->> 'sub') = privy_user_id);
 
 create policy "Users can read own agents"
   on agents for select
+  to authenticated
   using (user_id in (
-    select id from users where privy_user_id = auth.jwt() ->> 'sub'
+    select id from users where privy_user_id = ((select auth.jwt()) ->> 'sub')
   ));
