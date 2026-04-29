@@ -57,6 +57,7 @@ function match(params: {
     settlementGraceSeconds: 15,
     startingCapitalUsd: 100,
     creator,
+    invite: null,
     opponent: params.opponent ?? null,
     createdAt: params.createdAt ?? "2026-04-29T00:00:00.000Z",
     warmupStartedAt: null,

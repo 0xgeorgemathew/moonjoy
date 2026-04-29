@@ -1,15 +1,19 @@
 import { deriveMatchPhase, type MatchPhase } from "@moonjoy/game";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { getLeaderboardForMatch, type LeaderboardEntry } from "@/lib/services/leaderboard-service";
+import { getLeaderboardForMatch } from "@/lib/services/leaderboard-service";
 import { getTradeHistoryForMatch } from "@/lib/services/trade-service";
-import { getAllBalances, getTotalPenalties } from "@/lib/services/portfolio-ledger-service";
-import { getActiveTokensForMatch } from "@/lib/services/token-universe-service";
+import { getAllBalances } from "@/lib/services/portfolio-ledger-service";
+import {
+  getActiveTokensForMatch,
+  type TokenInfo,
+} from "@/lib/services/token-universe-service";
 import { getActiveMatchSnapshotForUser, listOpenChallengesForUser } from "@/lib/services/match-service";
 import { listStrategies } from "@/lib/services/agent-bootstrap-service";
-import { requirePhaseThreeReadyUser } from "@/lib/services/mcp-auth-service";
 import { resolveUser } from "@/lib/services/ens-resolution-service";
 import { getFullNameForAddress } from "@/lib/services/ens-service";
 import type { Address } from "viem";
+import type { McpRuntimeContext } from "@/lib/types/mcp";
+import type { StrategyRecord } from "@/lib/types/strategy";
 import type {
   ArenaSnapshot,
   ArenaReadiness,
@@ -94,15 +98,29 @@ export async function getArenaSnapshot(privyUserId: string): Promise<ArenaSnapsh
   if (agent && hasMcpApproval) {
     try {
       const stratResult = await listStrategies(
-        { agentId: agent.id, userId } as any,
+        {
+          agentId: agent.id,
+          userId,
+          privyUserId,
+          approvalId: "",
+          smartAccountAddress: agent.smart_account_address ?? "",
+          subject: "",
+          clientName: "Moonjoy Arena",
+          scopes: [],
+          executionSignerId: null,
+          executionKeyExpiresAt: null,
+        } satisfies McpRuntimeContext,
         false,
       );
-      strategies = (stratResult as any[]).map((s: any) => ({
+      const strategyRows = Array.isArray(stratResult.strategies)
+        ? (stratResult.strategies as StrategyRecord[])
+        : [];
+      strategies = strategyRows.map((s) => ({
         id: s.id,
         name: s.name,
-        sourceType: s.source_type ?? s.sourceType,
+        sourceType: s.source_type,
         status: s.status,
-        createdAt: s.created_at ?? s.createdAt,
+        createdAt: s.created_at,
       }));
       readiness.hasStrategy = strategies.some((s) => s.status === "active");
       readiness.ready = readiness.hasStrategy && readiness.blockers.length === 0;
@@ -356,11 +374,11 @@ async function buildLiveData(
     leaderboard,
     viewerPortfolio,
     opponentPortfolio,
-    allowedTokens: allowedTokens.map((t: any) => ({
-      address: t.address ?? t.token_address ?? "",
-      symbol: t.symbol ?? "",
-      decimals: t.decimals ?? 18,
-      riskTier: t.risk_tier ?? t.riskTier ?? "blue_chip",
+    allowedTokens: allowedTokens.map((t: TokenInfo) => ({
+      address: t.address,
+      symbol: t.symbol,
+      decimals: t.decimals,
+      riskTier: t.riskTier,
     })),
   };
 }
@@ -418,6 +436,7 @@ async function buildPortfolioView(
     totalPnlUsd: Number(v.total_pnl_usd ?? 0),
     pnlPercent: Number(v.pnl_percent ?? 0),
     penaltiesUsd: Number(v.penalties_usd ?? 0),
+    penaltyImpactUsd: -Number(v.penalties_usd ?? 0),
     netScoreUsd: Number(v.total_pnl_usd ?? 0) - Number(v.penalties_usd ?? 0),
     netScorePercent: Number(v.net_score_percent ?? 0),
     stale: Boolean(v.stale),
