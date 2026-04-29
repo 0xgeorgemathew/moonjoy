@@ -1,8 +1,6 @@
 import {
   isTradingAllowed,
   deriveMatchPhase,
-  BASE_CHAIN_ID,
-  QUOTE_MAX_AGE_SECONDS,
   MIN_TRADE_USD,
   MAX_TRADE_PORTFOLIO_PERCENT,
 } from "@moonjoy/game";
@@ -25,7 +23,6 @@ import {
   getTokenRiskTier,
   getMaxPriceImpactBps,
   getSlippageBps,
-  getPositionLimitPercent,
 } from "@/lib/services/token-universe-service";
 
 export type SubmitTradeInput = {
@@ -86,7 +83,6 @@ export async function submitSimulatedTrade(
   }
 
   const tokens = await getActiveTokensForMatch(input.matchId);
-  const riskTierIn = getTokenRiskTier(tokens, input.tokenIn);
   const riskTierOut = getTokenRiskTier(tokens, input.tokenOut);
   if (!riskTierOut) {
     return rejectTrade("Cannot determine risk tier for output token.");
@@ -94,7 +90,6 @@ export async function submitSimulatedTrade(
 
   const slippageBps = getSlippageBps(riskTierOut);
   const maxPriceImpact = getMaxPriceImpactBps(riskTierOut);
-  const maxPositionPercent = getPositionLimitPercent(riskTierOut);
 
   if (BigInt(input.amountInBaseUnits) <= BigInt(0)) {
     return rejectTrade("Trade amount must be positive.");
@@ -146,7 +141,7 @@ export async function submitSimulatedTrade(
     return rejectTrade(validationError.reason);
   }
 
-  let outputValueUsd = await estimateTradeValueUsd(
+  const outputValueUsd = await estimateTradeValueUsd(
     input.tokenOut,
     quote.outputAmount,
     input.smartAccountAddress,
