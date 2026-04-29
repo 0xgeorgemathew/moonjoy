@@ -7,12 +7,17 @@ import { LandingCta } from "@/components/landing-cta";
 import { LandingProfile } from "@/components/landing-profile";
 import { LandingSettings } from "@/components/landing-settings";
 import { NetworkToggle } from "@/components/network-toggle";
+import { useUserEnsStatus } from "@/lib/hooks/use-user-ens-status";
 
 type ViewType = "hero" | "profile" | "settings";
 
 export function LandingHeroPanel() {
   const { authenticated } = usePrivy();
   const [activeView, setActiveView] = useState<ViewType>("hero");
+  const { accessToken, ensStatus, loading: ensLoading } =
+    useUserEnsStatus(authenticated);
+  const shellViewClass =
+    "animate-fade-in-up relative flex min-h-[28rem] min-w-0 flex-1 flex-col overflow-hidden sm:min-h-[32rem] lg:h-full lg:min-h-0";
 
   const networkToggle = (
     <div className="absolute right-2 top-4 z-10 sm:right-4">
@@ -22,26 +27,35 @@ export function LandingHeroPanel() {
 
   return (
     <div className="relative z-20 flex min-h-full items-start justify-center pt-[18vh] px-2 sm:px-4 lg:pt-[14vh] lg:px-8">
-      <div className="neo-panel flex w-full max-w-4xl flex-col overflow-hidden lg:flex-row">
+      <div className="neo-panel flex w-full max-w-[70rem] flex-col overflow-hidden lg:h-[44rem] lg:flex-row">
         <LandingNav
           activeView={activeView}
+          ensName={ensStatus?.userEnsName ?? null}
+          ensLoading={ensLoading}
           onSettingsClick={() => setActiveView("settings")}
           onHomeClick={() => setActiveView("hero")}
           onProfileClick={() => setActiveView("profile")}
         />
 
         {activeView === "profile" && authenticated ? (
-          <div key="profile" className="animate-fade-in-up relative flex min-h-[200px] flex-1 flex-col">
+          <div key="profile" className={shellViewClass}>
             {networkToggle}
-            <LandingProfile />
+            <LandingProfile
+              accessToken={accessToken}
+              ensLoading={ensLoading}
+              ensStatus={ensStatus}
+            />
           </div>
         ) : activeView === "settings" && authenticated ? (
-          <div key="settings" className="animate-fade-in-up relative flex min-h-[200px] flex-1 flex-col">
+          <div key="settings" className={shellViewClass}>
             {networkToggle}
             <LandingSettings />
           </div>
         ) : (
-          <div key="hero" className="animate-fade-in-up relative flex min-h-[200px] flex-1 flex-col items-center justify-center p-5 sm:p-10">
+          <div
+            key="hero"
+            className={`${shellViewClass} items-center justify-center p-5 sm:p-10 lg:px-14 lg:py-12`}
+          >
             {networkToggle}
 
             <h1 className="overflow-hidden text-wrap-balance font-display text-[clamp(2.5rem,10vw,3.75rem)] font-black uppercase leading-none tracking-tighter text-black sm:text-7xl lg:text-8xl">

@@ -1,8 +1,14 @@
+import { MOON_RIGHT_RATIO, MOON_TOP_RATIO } from "@/lib/space-scene";
+
 export function LandingMoon() {
   return (
     <div
-      className="moon-hero pointer-events-none absolute right-[8vw] top-[15vh] z-[3]"
+      className="moon-hero pointer-events-none absolute z-[3]"
       aria-hidden="true"
+      style={{
+        right: `${MOON_RIGHT_RATIO * 100}vw`,
+        top: `${MOON_TOP_RATIO * 100}vh`,
+      }}
     >
       <div className="moon-glow">
         <svg

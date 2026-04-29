@@ -15,19 +15,7 @@ const navItems = [
 		),
 	},
 	{
-		label: "Deploy",
-		href: "/match/create",
-		icon: (
-			<svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-				<path d="M4.5 16.5c-1.5 1.26-2 5-2 5s3.74-.5 5-2c.71-.84.7-2.13-.09-2.91a2.18 2.18 0 0 0-2.91-.09z" />
-				<path d="m12 15-3-3a22 22 0 0 1 2-3.95A12.88 12.88 0 0 1 22 2c0 2.72-.78 7.5-6 11a22.35 22.35 0 0 1-4 2z" />
-				<path d="M9 12H4s.55-3.03 2-4c1.62-1.08 5 0 5 0" />
-				<path d="M12 15v5s3.03-.55 4-2c1.08-1.62 0-5 0-5" />
-			</svg>
-		),
-	},
-	{
-		label: "Active",
+		label: "Arena",
 		href: "/match",
 		icon: (
 			<svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -57,7 +45,7 @@ const profileIcon = (
 
 type ViewType = "hero" | "profile" | "settings";
 
-export function LandingNav({ activeView, onSettingsClick, onHomeClick, onProfileClick }: { activeView: ViewType; onSettingsClick: () => void; onHomeClick: () => void; onProfileClick: () => void }) {
+export function LandingNav({ activeView, ensLoading, ensName, onSettingsClick, onHomeClick, onProfileClick }: { activeView: ViewType; ensLoading: boolean; ensName: string | null; onSettingsClick: () => void; onHomeClick: () => void; onProfileClick: () => void }) {
 	const { authenticated } = usePrivy();
 
 	const buttonClass = (isActive: boolean) =>
@@ -67,11 +55,11 @@ export function LandingNav({ activeView, onSettingsClick, onHomeClick, onProfile
 				: "text-gray-500 hover:bg-gray-100 hover:text-black"
 		}`;
 
-	return (
-		<aside className="flex min-w-0 shrink-0 flex-col items-center gap-0.5 overflow-x-auto border-b border-black/10 px-2 py-3 sm:gap-1 sm:px-3 sm:py-4 lg:w-[72px] lg:overflow-x-visible lg:border-b-0 lg:border-r lg:px-2 lg:py-6">
-			<UserIdentityBlock authenticated={authenticated} />
+			return (
+				<aside className="flex min-w-0 shrink-0 flex-col items-center gap-0.5 overflow-x-auto border-b border-black/10 px-2 py-3 sm:gap-1 sm:px-3 sm:py-4 lg:w-[88px] lg:overflow-x-visible lg:self-stretch lg:border-b-0 lg:border-r lg:px-3 lg:py-6">
+				<UserIdentityBlock authenticated={authenticated} ensLoading={ensLoading} ensName={ensName} />
 
-			<nav className="flex flex-1 flex-col gap-0.5 sm:gap-1">
+				<nav className="flex flex-col gap-0.5 sm:gap-1">
 				{authenticated && (
 					<button
 						type="button"

@@ -40,6 +40,10 @@
 
 	--shadow-dark: rgba(21, 101, 192, 0.55);
 	--shadow-light: rgba(255, 255, 255, 0.03);
+
+	--font-display-family: "Arial Black", "Impact", system-ui, sans-serif;
+	--font-body-family: "Avenir Next", "Segoe UI", system-ui, sans-serif;
+	--font-label-family: "Arial", system-ui, sans-serif;
 }
 
 @theme inline {
@@ -78,9 +82,9 @@
 	--color-error: var(--error);
 
 	/* Font tokens */
-	--font-display: var(--font-display);
-	--font-body: var(--font-body);
-	--font-label: var(--font-label);
+	--font-display: var(--font-display-family);
+	--font-body: var(--font-body-family);
+	--font-label: var(--font-label-family);
 
 	/* Animation tokens */
 	--animate-float: float 6s ease-in-out infinite;
@@ -97,6 +101,10 @@
 		infinite;
 	--animate-engine-flicker: engine-flicker 0.15s ease-in-out infinite alternate;
 	--animate-neu-glow: neu-glow 4s ease-in-out infinite;
+	--animate-msg-enter: msg-enter 0.45s ease-out forwards;
+	--animate-challenge-pulse: challenge-pulse 2.5s ease-in-out infinite;
+	--animate-accept-flash: accept-flash 0.5s ease-out forwards;
+	--animate-typing-dots: typing-dots 1.4s ease-in-out infinite;
 }
 
 @layer utilities {
@@ -123,6 +131,15 @@
 	}
 	.animate-twinkle-6 {
 		animation: var(--animate-twinkle-6);
+	}
+	.animate-msg-enter {
+		animation: var(--animate-msg-enter);
+	}
+	.animate-challenge-pulse {
+		animation: var(--animate-challenge-pulse);
+	}
+	.animate-accept-flash {
+		animation: var(--animate-accept-flash);
 	}
 }
 
@@ -304,6 +321,54 @@ body {
 			7px 7px 14px var(--shadow-dark),
 			-7px -7px 14px var(--shadow-light),
 			0 0 32px 8px rgb(232 166 35 / 0.35);
+	}
+}
+
+@keyframes msg-enter {
+	from {
+		opacity: 0;
+		transform: translateY(24px);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0);
+	}
+}
+
+@keyframes challenge-pulse {
+	0%,
+	100% {
+		box-shadow:
+			6px 6px 0 0 var(--artemis-blue),
+			0 0 0 0 transparent;
+	}
+	50% {
+		box-shadow:
+			6px 6px 0 0 var(--artemis-blue),
+			0 0 18px 4px rgba(232, 166, 35, 0.25);
+	}
+}
+
+@keyframes accept-flash {
+	0% {
+		background-color: #fff;
+	}
+	30% {
+		background-color: #e8f5e9;
+	}
+	100% {
+		background-color: #fff;
+	}
+}
+
+@keyframes typing-dots {
+	0%,
+	60%,
+	100% {
+		opacity: 0.2;
+	}
+	30% {
+		opacity: 1;
 	}
 }
 

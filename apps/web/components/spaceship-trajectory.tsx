@@ -1,6 +1,7 @@
 "use client"
 
 import { useEffect, useRef, useState } from "react"
+import { MOON_RIGHT_RATIO, MOON_TOP_RATIO } from "@/lib/space-scene"
 import SpaceshipSvg from "./spaceship-svg"
 
 type Point = {
@@ -109,8 +110,8 @@ export default function SpaceshipTrajectory() {
     size: earthSize,
   }
   const moon = {
-    x: w * 0.92 - moonSize / 2,
-    y: h * 0.15 + moonSize / 2,
+    x: w * (1 - MOON_RIGHT_RATIO) - moonSize / 2,
+    y: h * MOON_TOP_RATIO + moonSize / 2,
     size: moonSize,
   }
 

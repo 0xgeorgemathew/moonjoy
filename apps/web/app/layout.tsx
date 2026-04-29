@@ -2,7 +2,6 @@ import "@/lib/log.init";
 
 import type { Metadata, Viewport } from "next";
 import { Providers } from "@/components/providers";
-import { AuthOnboardingController } from "@/components/auth-onboarding-controller";
 import "./globals.css";
 
 const appUrl = process.env.NEXT_PUBLIC_APP_URL ?? "https://moonjoy.up.railway.app";
@@ -54,7 +53,6 @@ export default function RootLayout({
       </head>
       <body className="min-h-[100dvh] bg-surface">
         <Providers>
-          <AuthOnboardingController />
           <div className="safe-area-wrapper flex h-[100dvh]">
             {children}
           </div>

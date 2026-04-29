@@ -10,7 +10,7 @@ export function LandingSettings() {
 	const agent = onboardResult?.agent;
 
 	return (
-		<div className="flex min-h-[200px] flex-1 flex-col gap-6 overflow-y-auto p-5 sm:p-10">
+		<div className="flex h-full min-h-0 flex-1 flex-col gap-6 overflow-y-auto p-5 sm:p-10 lg:px-12 lg:py-10">
 			<h2 className="font-display text-xl font-black uppercase tracking-tight text-black">
 				Settings
 			</h2>
