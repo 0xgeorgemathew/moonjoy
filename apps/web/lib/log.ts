@@ -29,8 +29,6 @@ function readEnvLevel(): LogLevel {
   return "info";
 }
 
-function noop() {}
-
 function makeGate(level: LogLevel, original: (...args: unknown[]) => void) {
   const threshold = LEVELS[level];
   return (...args: unknown[]) => {

@@ -2,6 +2,7 @@
 
 import { PrivyProvider } from "@privy-io/react-auth";
 import { SmartWalletsProvider } from "@privy-io/react-auth/smart-wallets";
+import { AuthStateProvider } from "@/lib/hooks/use-auth-state";
 import { NetworkProvider, useNetwork } from "@/lib/hooks/use-network";
 import { base, baseSepolia } from "viem/chains";
 import type { ReactNode } from "react";
@@ -31,7 +32,9 @@ function PrivyStack({ children }: { children: ReactNode }) {
 export function Providers({ children }: { children: ReactNode }) {
   return (
     <NetworkProvider>
-      <PrivyStack>{children}</PrivyStack>
+      <PrivyStack>
+        <AuthStateProvider>{children}</AuthStateProvider>
+      </PrivyStack>
     </NetworkProvider>
   );
 }

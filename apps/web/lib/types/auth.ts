@@ -2,7 +2,6 @@ export interface AuthUser {
   id: string;
   privy_user_id: string;
   embedded_signer_address: string | null;
-  ens_name: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -12,8 +11,10 @@ export interface Agent {
   user_id: string;
   smart_account_address: string | null;
   setup_status: "incomplete" | "wallet_created";
-  ens_name: string | null;
   status: "active" | "paused" | "revoked";
+  execution_signer_id: string | null;
+  execution_signer_provider: "none" | "privy_authorization_key";
+  execution_key_expires_at: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -27,4 +28,5 @@ export type SetupStatus =
   | "unauthenticated"
   | "loading"
   | "onboarding"
+  | "error"
   | "complete";
