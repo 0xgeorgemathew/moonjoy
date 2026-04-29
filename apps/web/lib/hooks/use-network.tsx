@@ -25,9 +25,9 @@ const CHAIN_MAP: Record<NetworkMode, Chain> = {
 
 const STORAGE_KEY = "moonjoy-network-mode";
 
-function subscribe(_cb: () => void) {
+function subscribe(cb: () => void) {
   const handler = (e: StorageEvent) => {
-    if (e.key === STORAGE_KEY) _cb();
+    if (e.key === STORAGE_KEY) cb();
   };
   window.addEventListener("storage", handler);
   return () => window.removeEventListener("storage", handler);
@@ -52,31 +52,29 @@ export function NetworkProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const toggle = useCallback(() => {
-    const current = getSnapshot();
-    const next = current === "mainnet" ? "testnet" : "mainnet";
-    localStorage.setItem(STORAGE_KEY, next);
-    window.dispatchEvent(new StorageEvent("storage", { key: STORAGE_KEY }));
-  }, []);
+    setNetworkMode(getSnapshot() === "mainnet" ? "testnet" : "mainnet");
+  }, [setNetworkMode]);
 
   const chain = CHAIN_MAP[networkMode];
-  const value: NetworkContextValue = {
-    networkMode,
-    chain,
-    chainId: chain.id,
-    isTestnet: networkMode === "testnet",
-    toggle,
-    setNetworkMode,
-  };
 
   return (
-    <NetworkContext.Provider value={value}>
+    <NetworkContext.Provider
+      value={{
+        networkMode,
+        chain,
+        chainId: chain.id,
+        isTestnet: networkMode === "testnet",
+        toggle,
+        setNetworkMode,
+      }}
+    >
       {children}
     </NetworkContext.Provider>
   );
 }
 
 export function useNetwork(): NetworkContextValue {
-  const ctx = useContext(NetworkContext);
-  if (!ctx) throw new Error("useNetwork must be used within a NetworkProvider");
-  return ctx;
+  const context = useContext(NetworkContext);
+  if (!context) throw new Error("useNetwork must be used within a NetworkProvider");
+  return context;
 }
