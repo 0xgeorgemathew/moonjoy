@@ -12,6 +12,7 @@ export type LeaderboardEntry = {
   agentId: string;
   seat: "creator" | "opponent";
   currentValueUsd: number;
+  usdcBalanceUsd: number;
   realizedPnlUsd: number;
   unrealizedPnlUsd: number;
   totalPnlUsd: number;
@@ -70,6 +71,7 @@ export async function getLeaderboardForMatch(
       seat: "creator",
       startingValueUsd: startingCapital,
       currentValueUsd: creatorVal?.currentValueUsd ?? startingCapital,
+      usdcBalanceUsd: creatorVal?.usdcBalanceUsd ?? startingCapital,
       realizedPnlUsd: creatorVal?.realizedPnlUsd ?? 0,
       unrealizedPnlUsd: creatorVal?.unrealizedPnlUsd ?? 0,
       totalPnlUsd: creatorVal?.totalPnlUsd ?? 0,
@@ -87,6 +89,7 @@ export async function getLeaderboardForMatch(
       seat: "opponent",
       startingValueUsd: startingCapital,
       currentValueUsd: opponentVal?.currentValueUsd ?? startingCapital,
+      usdcBalanceUsd: opponentVal?.usdcBalanceUsd ?? startingCapital,
       realizedPnlUsd: opponentVal?.realizedPnlUsd ?? 0,
       unrealizedPnlUsd: opponentVal?.unrealizedPnlUsd ?? 0,
       totalPnlUsd: opponentVal?.totalPnlUsd ?? 0,
@@ -108,6 +111,7 @@ export async function getLeaderboardForMatch(
     agentId: r.agentId,
     seat: r.seat,
     currentValueUsd: r.currentValueUsd,
+    usdcBalanceUsd: r.usdcBalanceUsd,
     realizedPnlUsd: r.realizedPnlUsd,
     unrealizedPnlUsd: r.unrealizedPnlUsd,
     totalPnlUsd: r.totalPnlUsd,
@@ -139,9 +143,16 @@ async function getLatestValuation(
   if (!data) return null;
 
   const d = data as Record<string, unknown>;
+  const balances = (d.balances as Array<{ tokenAddress: string; valueUsd: number }> | null) ?? [];
+  const usdcFromBalances = balances.find(
+    (b) => b.tokenAddress.toLowerCase() === "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+  )?.valueUsd ?? 0;
+  const usdcBalanceUsd = Number(d.usdc_balance_usd) || usdcFromBalances;
+
   return {
     startingValueUsd: Number(d.starting_value_usd),
     currentValueUsd: Number(d.current_value_usd),
+    usdcBalanceUsd,
     realizedPnlUsd: Number(d.realized_pnl_usd),
     unrealizedPnlUsd: Number(d.unrealized_pnl_usd),
     totalPnlUsd: Number(d.total_pnl_usd),
@@ -153,6 +164,7 @@ async function getLatestValuation(
     maxDrawdownPercent: Number(d.max_drawdown_percent),
     stale: Boolean(d.stale),
     quoteSnapshotIds: (d.quote_snapshot_ids as string[]) ?? [],
+    balanceDetails: (d.balances as import("@/lib/services/portfolio-ledger-service").BalanceDetail[]) ?? [],
   };
 }
 

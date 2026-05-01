@@ -134,7 +134,7 @@ export type BootstrapRecommendation =
   | {
       status: "blocked";
       step: "claim_agent_identity";
-      toolName: "moonjoy_claim_agent_identity";
+      toolName: "moonjoy_strategy:action=claim_identity";
       args: Record<string, never>;
       reason: string;
       canRunAutomatically: false;
@@ -142,7 +142,7 @@ export type BootstrapRecommendation =
   | {
       status: "actionable";
       step: "claim_agent_identity";
-      toolName: "moonjoy_claim_agent_identity";
+      toolName: "moonjoy_strategy:action=claim_identity";
       args: Record<string, never>;
       reason: string;
       canRunAutomatically: true;
@@ -150,7 +150,7 @@ export type BootstrapRecommendation =
   | {
       status: "actionable";
       step: "create_default_strategy";
-      toolName: "moonjoy_create_strategy";
+      toolName: "moonjoy_strategy:action=create";
       args: StrategyMutationInput;
       reason: string;
       canRunAutomatically: true;
@@ -158,7 +158,7 @@ export type BootstrapRecommendation =
   | {
       status: "actionable";
       step: "sync_strategy_pointer";
-      toolName: "moonjoy_update_strategy";
+      toolName: "moonjoy_strategy:action=update";
       args: StrategyUpdateInput;
       reason: string;
       canRunAutomatically: true;
@@ -596,7 +596,7 @@ export function buildBootstrapRecommendationFromState(
     return {
       status: "blocked",
       step: "claim_agent_identity",
-      toolName: "moonjoy_claim_agent_identity",
+      toolName: "moonjoy_strategy:action=claim_identity",
       args: {},
       reason: "User ENS identity is missing, so agent bootstrap cannot proceed.",
       canRunAutomatically: false,
@@ -621,7 +621,7 @@ export function buildBootstrapRecommendationFromState(
       return {
         status: "blocked",
         step: "claim_agent_identity",
-        toolName: "moonjoy_claim_agent_identity",
+        toolName: "moonjoy_strategy:action=claim_identity",
         args: {},
         reason:
           "Agent ENS identity is still missing, but wallet execution authority is unavailable.",
@@ -632,7 +632,7 @@ export function buildBootstrapRecommendationFromState(
     return {
       status: "actionable",
       step: "claim_agent_identity",
-      toolName: "moonjoy_claim_agent_identity",
+      toolName: "moonjoy_strategy:action=claim_identity",
       args: {},
       reason:
         state.derivedAgentStatusReason ??
@@ -649,7 +649,7 @@ export function buildBootstrapRecommendationFromState(
       return {
         status: "actionable",
         step: "claim_agent_identity",
-        toolName: "moonjoy_claim_agent_identity",
+        toolName: "moonjoy_strategy:action=claim_identity",
         args: {},
         reason:
           "Agent ENS currently resolves to the smart wallet, but the ENS NFT is still owned by the human EOA.",
@@ -660,7 +660,7 @@ export function buildBootstrapRecommendationFromState(
     return {
       status: "blocked",
       step: "claim_agent_identity",
-      toolName: "moonjoy_claim_agent_identity",
+      toolName: "moonjoy_strategy:action=claim_identity",
       args: {},
       reason:
         "Agent ENS currently resolves to the smart wallet, but the ENS NFT is owned by a different address.",
@@ -672,7 +672,7 @@ export function buildBootstrapRecommendationFromState(
     return {
       status: "actionable",
       step: "create_default_strategy",
-      toolName: "moonjoy_create_strategy",
+      toolName: "moonjoy_strategy:action=create",
       args: buildDefaultBootstrapStrategy(state),
       reason: "The agent does not have an active default strategy yet.",
       canRunAutomatically: true,

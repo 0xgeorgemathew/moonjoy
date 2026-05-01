@@ -118,6 +118,8 @@ export async function tickActiveMatch(
     );
     actions.push("refreshed_valuations");
 
+    await broadcastValuationRefreshed(matchId, creatorAgentId, opponentAgentId);
+
     // Check mandatory windows
     const windows = getMandatoryWindows(liveStartedAt, liveEndsAt);
     for (const window of windows) {
@@ -287,6 +289,7 @@ async function settleMatchFromWorker(
     seat: "creator",
     startingValueUsd: startingCapital,
     currentValueUsd: creatorValuation.currentValueUsd,
+    usdcBalanceUsd: creatorValuation.usdcBalanceUsd,
     realizedPnlUsd: creatorValuation.realizedPnlUsd,
     unrealizedPnlUsd: creatorValuation.unrealizedPnlUsd,
     totalPnlUsd: creatorValuation.totalPnlUsd,
@@ -307,6 +310,7 @@ async function settleMatchFromWorker(
     seat: "opponent",
     startingValueUsd: startingCapital,
     currentValueUsd: opponentValuation.currentValueUsd,
+    usdcBalanceUsd: opponentValuation.usdcBalanceUsd,
     realizedPnlUsd: opponentValuation.realizedPnlUsd,
     unrealizedPnlUsd: opponentValuation.unrealizedPnlUsd,
     totalPnlUsd: opponentValuation.totalPnlUsd,
@@ -338,12 +342,14 @@ async function settleMatchFromWorker(
         spreadPnlPercent: result.spreadPnlPercent,
         creator: {
           currentValueUsd: creatorValuation.currentValueUsd,
+          usdcBalanceUsd: creatorValuation.usdcBalanceUsd,
           totalPnlUsd: creatorValuation.totalPnlUsd,
           netScorePercent: creatorValuation.netScorePercent,
           penaltiesUsd: creatorPenalties,
         },
         opponent: {
           currentValueUsd: opponentValuation.currentValueUsd,
+          usdcBalanceUsd: opponentValuation.usdcBalanceUsd,
           totalPnlUsd: opponentValuation.totalPnlUsd,
           netScorePercent: opponentValuation.netScorePercent,
           penaltiesUsd: opponentPenalties,
@@ -364,4 +370,47 @@ export async function getActiveMatchesForWorker(): Promise<string[]> {
 
   if (!data) return [];
   return data.map((r) => (r as { id: string }).id);
+}
+
+async function broadcastValuationRefreshed(
+  matchId: string,
+  creatorAgentId: string,
+  opponentAgentId: string,
+): Promise<void> {
+  const url = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  if (!url || !serviceKey) return;
+
+  const topics = [
+    `match:${matchId}`,
+    `agent:${creatorAgentId}:matches`,
+    `agent:${opponentAgentId}:matches`,
+  ];
+
+  await Promise.all(
+    topics.map(async (topic) => {
+      try {
+        await fetch(`${url}/rest/v1/rpc/broadcast`, {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: serviceKey,
+            Authorization: `Bearer ${serviceKey}`,
+          },
+          body: JSON.stringify({
+            topic,
+            event: "valuation_refreshed",
+            payload: {
+              eventType: "valuation.refreshed",
+              matchId,
+              updatedAt: new Date().toISOString(),
+            },
+            private: false,
+          }),
+        });
+      } catch {
+        // Broadcast is best-effort
+      }
+    }),
+  );
 }

@@ -10,23 +10,15 @@ import {
   runBootstrap,
   type BootstrapRecommendation,
 } from "@/lib/services/agent-bootstrap-service";
-import {
-  getActiveMatchSnapshotForMcpContext,
-  listOpenChallengesForMcpContext,
-  createChallengeForMcpContext,
-  acceptChallengeForMcpContext,
-  cancelChallengeForMcpContext,
-} from "@/lib/services/match-service";
+import { getActiveMatchSnapshotForMcpContext } from "@/lib/services/match-service";
 import { submitSimulatedTrade } from "@/lib/services/trade-service";
 import { getTradeHistoryForMatch } from "@/lib/services/trade-service";
 import { getLeaderboardForMatch } from "@/lib/services/leaderboard-service";
-import { discoverBaseTokens, getTokenRiskProfile } from "@/lib/services/dexscreener-discovery-service";
 import { fetchExactInputQuote } from "@/lib/services/uniswap-quote-service";
 import { getAllBalances } from "@/lib/services/portfolio-ledger-service";
 import { getActiveTokensForMatch } from "@/lib/services/token-universe-service";
 import { tickActiveMatch } from "@/lib/services/worker-loop-service";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { decideMatchmakingAction } from "@/lib/services/matchmaking-decision";
 import type { McpRuntimeContext } from "@/lib/types/mcp";
 
 const BASE_USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
@@ -73,7 +65,7 @@ export type MoonjoyIdentity = {
   };
   bootstrap: {
     status: BootstrapRecommendation["status"];
-    runToolName: "moonjoy_run_bootstrap" | null;
+    runToolName: "moonjoy_strategy:bootstrap_run" | null;
     shouldAutoRun: boolean;
     recommendedAction: BootstrapRecommendation;
     pendingTransactions: Awaited<
@@ -87,9 +79,6 @@ export async function getMoonjoyIdentity(
 ): Promise<MoonjoyIdentity> {
   const supabase = createAdminClient();
 
-  // Fire everything in parallel; `resolveUser` and `getAgentBootstrapState`
-  // overlap on a few ENS reads but the short-lived cache in ens-cache.ts
-  // de-duplicates repeat calls inside the same request.
   const [userQuery, resolved, bootstrap, funding] = await Promise.all([
     supabase
       .from("users")
@@ -102,8 +91,6 @@ export async function getMoonjoyIdentity(
   ]);
 
   const user = userQuery.data;
-  // Compute the recommendation from already-loaded state so we don't
-  // re-run the whole bootstrap probe a second time.
   const recommendation = buildBootstrapRecommendationFromState(bootstrap);
   const userEnsReady =
     Boolean(resolved.ensName) &&
@@ -113,7 +100,6 @@ export async function getMoonjoyIdentity(
         resolved.address.toLowerCase() ===
           user.embedded_signer_address.toLowerCase(),
     );
-  // ENS bootstrap and current MCP-controlled agent actions run with sponsorship.
   const bootstrapGasSponsored = true;
   const fundingReady = true;
   const agentIdentityReady =
@@ -167,7 +153,7 @@ export async function getMoonjoyIdentity(
     bootstrap: {
       status: recommendation.status,
       runToolName:
-        recommendation.status === "actionable" ? "moonjoy_run_bootstrap" : null,
+        recommendation.status === "actionable" ? "moonjoy_strategy:bootstrap_run" : null,
       shouldAutoRun: recommendation.status === "actionable",
       recommendedAction: recommendation,
       pendingTransactions: bootstrap.pendingTransactions,
@@ -177,63 +163,259 @@ export async function getMoonjoyIdentity(
 
 export async function getMoonjoyMatchStateForContext(
   context: McpRuntimeContext,
-): Promise<
-  Awaited<ReturnType<typeof getActiveMatchSnapshotForMcpContext>> & {
-    joinableChallengeCount: number;
-    nextRecommendedTool: "moonjoy_auto" | null;
-    nextActionReason: string;
-    coordination: ReturnType<typeof decideMatchmakingAction>["coordination"];
-  }
-> {
+): Promise<{
+  viewer: Awaited<ReturnType<typeof getActiveMatchSnapshotForMcpContext>>["viewer"];
+  activeMatch: Awaited<ReturnType<typeof getActiveMatchSnapshotForMcpContext>>["activeMatch"];
+  nextRecommendedTool: string | null;
+  nextActionReason: string;
+}> {
   const snapshot = await getActiveMatchSnapshotForMcpContext(context);
-  const open = await listOpenChallengesForMcpContext(context);
-  const decision = decideMatchmakingAction(snapshot, open);
+
+  if (snapshot.activeMatch?.status === "live") {
+    return {
+      ...snapshot,
+      nextRecommendedTool: "moonjoy_match:action=play_turn",
+      nextActionReason: "Live match is active. Keep trading.",
+    };
+  }
+
+  if (snapshot.activeMatch) {
+    return {
+      ...snapshot,
+      nextRecommendedTool: "moonjoy_match:action=heartbeat",
+      nextActionReason: `Active match ${snapshot.activeMatch.id} in status=${snapshot.activeMatch.status}.`,
+    };
+  }
 
   return {
     ...snapshot,
-    joinableChallengeCount: decision.joinableChallengeCount,
-    nextRecommendedTool: decision.nextRecommendedTool,
-    nextActionReason: decision.nextActionReason,
-    coordination: decision.coordination,
+    nextRecommendedTool: "moonjoy_match:action=heartbeat",
+    nextActionReason: "No active match. Wait for a human to create an invite.",
   };
-}
-
-export async function listMoonjoyOpenChallengesForContext(
-  context: McpRuntimeContext,
-): Promise<Awaited<ReturnType<typeof listOpenChallengesForMcpContext>>> {
-  return listOpenChallengesForMcpContext(context);
-}
-
-export async function createMoonjoyChallengeForContext(
-  context: McpRuntimeContext,
-): Promise<Awaited<ReturnType<typeof createChallengeForMcpContext>>> {
-  return createChallengeForMcpContext(context);
-}
-
-export async function acceptMoonjoyChallengeForContext(
-  context: McpRuntimeContext,
-  matchId: string,
-): Promise<Awaited<ReturnType<typeof acceptChallengeForMcpContext>>> {
-  return acceptChallengeForMcpContext(context, matchId);
-}
-
-export async function cancelMoonjoyChallengeForContext(
-  context: McpRuntimeContext,
-  matchId: string,
-): Promise<Awaited<ReturnType<typeof cancelChallengeForMcpContext>>> {
-  return cancelChallengeForMcpContext(context, matchId);
 }
 
 export async function runMoonjoyHeartbeat(
   context: McpRuntimeContext,
-): Promise<Awaited<ReturnType<typeof autoAdvanceMoonjoy>>> {
-  return autoAdvanceMoonjoy(context, { createIfNoJoinable: false });
+): Promise<{
+  status: "no_match" | "active" | "live";
+  actions: Array<{ name: string; detail?: unknown }>;
+  identity: MoonjoyIdentity;
+  match: Awaited<ReturnType<typeof getActiveMatchSnapshotForMcpContext>> | null;
+  note: string;
+}> {
+  const actions: Array<{ name: string; detail?: unknown }> = [];
+  const identity = await getMoonjoyIdentity(context);
+
+  if (identity.bootstrap.shouldAutoRun) {
+    const result = await runBootstrap(context);
+    actions.push({ name: "moonjoy_strategy:bootstrap_run", detail: result });
+  }
+
+  const snapshot = await getActiveMatchSnapshotForMcpContext(context);
+
+  if (!snapshot.activeMatch) {
+    return {
+      status: "no_match",
+      actions,
+      identity,
+      match: snapshot,
+      note: "No active match. Agents cannot create invites. Wait for a human to create one.",
+    };
+  }
+
+  if (snapshot.activeMatch.status === "live") {
+    return {
+      status: "live",
+      actions,
+      identity,
+      match: snapshot,
+      note: "Live match is active.",
+    };
+  }
+
+  return {
+    status: "active",
+    actions,
+    identity,
+    match: snapshot,
+    note: `Active match ${snapshot.activeMatch.id} in status=${snapshot.activeMatch.status}.`,
+  };
 }
 
 export async function playMoonjoyTurn(
   context: McpRuntimeContext,
-): Promise<Awaited<ReturnType<typeof autoAdvanceMoonjoy>>> {
-  return autoAdvanceMoonjoy(context, { createIfNoJoinable: false });
+): Promise<{
+  status: "no_match" | "active" | "traded" | "no_trade";
+  phase: string | null;
+  timeRemainingSeconds: number | null;
+  currentPortfolio: Awaited<ReturnType<typeof getMoonjoyPortfolio>> | null;
+  lastTrade: { status: string; reason?: string } | null;
+  alreadyTradedThisPhase: boolean;
+  nextRecommendedTools: string[];
+  actions: Array<{ name: string; detail?: unknown }>;
+  identity: MoonjoyIdentity;
+  match: Awaited<ReturnType<typeof getActiveMatchSnapshotForMcpContext>> | null;
+  note: string;
+}> {
+  const actions: Array<{ name: string; detail?: unknown }> = [];
+  const identity = await getMoonjoyIdentity(context);
+
+  if (identity.bootstrap.shouldAutoRun) {
+    const result = await runBootstrap(context);
+    actions.push({ name: "moonjoy_strategy:bootstrap_run", detail: result });
+  }
+
+  const snapshot = await getActiveMatchSnapshotForMcpContext(context);
+
+  if (!snapshot.activeMatch) {
+    return {
+      status: "no_match",
+      phase: null,
+      timeRemainingSeconds: null,
+      currentPortfolio: null,
+      lastTrade: null,
+      alreadyTradedThisPhase: false,
+      nextRecommendedTools: ["moonjoy_match:action=heartbeat"],
+      actions,
+      identity,
+      match: snapshot,
+      note: "No active match. Agents cannot create invites. Wait for a human to create one.",
+    };
+  }
+
+  if (snapshot.activeMatch.status === "warmup") {
+    return {
+      status: "active",
+      phase: "warmup",
+      timeRemainingSeconds: snapshot.activeMatch.warmupStartedAt
+        ? Math.max(0, snapshot.activeMatch.warmupDurationSeconds - Math.floor((Date.now() - new Date(snapshot.activeMatch.warmupStartedAt).getTime()) / 1000))
+        : null,
+      currentPortfolio: null,
+      lastTrade: null,
+      alreadyTradedThisPhase: false,
+      nextRecommendedTools: [
+        "moonjoy_market:action=dexscreener_search",
+        "moonjoy_market:action=validate_candidate",
+        "moonjoy_match:action=prepare",
+        "moonjoy_match:action=heartbeat",
+      ],
+      actions,
+      identity,
+      match: snapshot,
+      note: `Warmup phase. Prepare strategy and discover candidates. Match ${snapshot.activeMatch.id}.`,
+    };
+  }
+
+  if (snapshot.activeMatch.status === "settling" || snapshot.activeMatch.status === "settled") {
+    return {
+      status: "active",
+      phase: snapshot.activeMatch.status,
+      timeRemainingSeconds: null,
+      currentPortfolio: null,
+      lastTrade: null,
+      alreadyTradedThisPhase: false,
+      nextRecommendedTools: [
+        "moonjoy_match:action=heartbeat",
+        "moonjoy_strategy:action=record_decision",
+        "moonjoy_status:section=portfolio",
+      ],
+      actions,
+      identity,
+      match: snapshot,
+      note: `Match in ${snapshot.activeMatch.status} phase. Record final rationale.`,
+    };
+  }
+
+  if (snapshot.activeMatch.status !== "live") {
+    return {
+      status: "active",
+      phase: snapshot.activeMatch.status,
+      timeRemainingSeconds: null,
+      currentPortfolio: null,
+      lastTrade: null,
+      alreadyTradedThisPhase: false,
+      nextRecommendedTools: ["moonjoy_match:action=heartbeat"],
+      actions,
+      identity,
+      match: snapshot,
+      note: `Active match ${snapshot.activeMatch.id} in status=${snapshot.activeMatch.status}. Not live yet.`,
+    };
+  }
+
+  const autoTrade = await maybeSubmitLiveAutoTrade(context, snapshot.activeMatch);
+  actions.push(...autoTrade.actions);
+
+  let phase: string | null = null;
+  let timeRemainingSeconds: number | null = null;
+  let alreadyTradedThisPhase = false;
+
+  if (snapshot.activeMatch.liveStartedAt && snapshot.activeMatch.liveEndsAt) {
+    const now = new Date();
+    phase = deriveMatchPhase(
+      "live",
+      new Date(snapshot.activeMatch.liveStartedAt),
+      new Date(snapshot.activeMatch.liveEndsAt),
+      now,
+    );
+    timeRemainingSeconds = Math.max(0, Math.floor((new Date(snapshot.activeMatch.liveEndsAt).getTime() - now.getTime()) / 1000));
+
+    if (autoTrade.traded) {
+      alreadyTradedThisPhase = false;
+    } else {
+      const supabase = createAdminClient();
+      const { data: existingTrades } = await supabase
+        .from("simulated_trades")
+        .select("id, phase")
+        .eq("match_id", snapshot.activeMatch.id)
+        .eq("agent_id", context.agentId)
+        .eq("status", "accepted")
+        .eq("phase", phase);
+      alreadyTradedThisPhase = (existingTrades?.length ?? 0) > 0;
+    }
+  }
+
+  let currentPortfolio: Awaited<ReturnType<typeof getMoonjoyPortfolio>> | null = null;
+  try { currentPortfolio = await getMoonjoyPortfolio(context); } catch {}
+
+  const recommendedTools = autoTrade.traded
+    ? [
+        "moonjoy_match:action=play_turn",
+        "moonjoy_status:section=portfolio",
+        "moonjoy_status:section=leaderboard",
+        "moonjoy_strategy:action=record_decision",
+      ]
+    : alreadyTradedThisPhase
+      ? [
+          "moonjoy_match:action=play_turn",
+          "moonjoy_market:action=dexscreener_search",
+          "moonjoy_market:action=validate_candidate",
+          "moonjoy_status:section=portfolio",
+        ]
+      : [
+          "moonjoy_market:action=dexscreener_search",
+          "moonjoy_market:action=validate_candidate",
+          "moonjoy_market:action=quote",
+          "moonjoy_market:action=submit_trade",
+          "moonjoy_match:action=play_turn",
+        ];
+
+  return {
+    status: autoTrade.traded ? "traded" : "no_trade",
+    phase,
+    timeRemainingSeconds,
+    currentPortfolio,
+    lastTrade: autoTrade.traded
+      ? { status: "accepted" }
+      : autoTrade.actions.find((a) => a.name.includes("rejected"))
+        ? { status: "rejected", reason: autoTrade.note }
+        : null,
+    alreadyTradedThisPhase,
+    nextRecommendedTools: recommendedTools,
+    actions,
+    identity,
+    match: autoTrade.match,
+    note: autoTrade.note,
+  };
 }
 
 export async function getMoonjoyPortfolio(
@@ -457,26 +639,6 @@ export async function submitMoonjoyTrade(
   };
 }
 
-export async function discoverMoonjoyTokens(
-  context: McpRuntimeContext,
-  params?: { query?: string; minLiquidityUsd?: number; minVolume24hUsd?: number },
-) {
-  return discoverBaseTokens(
-    {
-      query: params?.query,
-      minLiquidityUsd: params?.minLiquidityUsd,
-      minVolume24hUsd: params?.minVolume24hUsd,
-    },
-  );
-}
-
-export async function getMoonjoyTokenRiskProfile(
-  context: McpRuntimeContext,
-  tokenAddress: string,
-) {
-  return getTokenRiskProfile(tokenAddress, context.smartAccountAddress);
-}
-
 export async function getMoonjoyMatchLeaderboard(
   matchId: string,
 ) {
@@ -494,267 +656,6 @@ export async function getMoonjoyAllowedTokens(
   matchId: string,
 ) {
   return getActiveTokensForMatch(matchId);
-}
-
-// Autonomous driver: reads identity, finishes bootstrap when actionable,
-// and advances the match lifecycle. One tool call progresses the agent as
-// far as it can go without human input, then returns a concise report.
-//
-// Returns one of:
-//   status: "blocked"          — bootstrap requires human intervention
-//   status: "ready_waiting"    — bootstrapped, in a match (or waiting), no action taken
-//   status: "advanced"         — at least one action was executed this call
-export async function autoAdvanceMoonjoy(
-  context: McpRuntimeContext,
-  options?: { skipMatchActions?: boolean; createIfNoJoinable?: boolean },
-): Promise<{
-  status: "blocked" | "ready_waiting" | "advanced";
-  actions: Array<{ name: string; detail?: unknown }>;
-  identity: MoonjoyIdentity;
-  match: Awaited<ReturnType<typeof getActiveMatchSnapshotForMcpContext>> | null;
-  note: string;
-  nextRecommendedTools?: string[];
-  nextActionReason?: string;
-  coordination?: ReturnType<typeof decideMatchmakingAction>["coordination"];
-}> {
-  const actions: Array<{ name: string; detail?: unknown }> = [];
-
-  // 1. Read identity (parallelized internally).
-  let identity = await getMoonjoyIdentity(context);
-
-  // 2. Finish bootstrap if the recommendation is actionable.
-  if (identity.bootstrap.shouldAutoRun) {
-    const result = await runBootstrap(context);
-    actions.push({ name: "moonjoy_run_bootstrap", detail: result });
-    identity = await getMoonjoyIdentity(context);
-  }
-
-  if (identity.bootstrap.status === "blocked") {
-    return {
-      status: "blocked",
-      actions,
-      identity,
-      match: null,
-      note:
-        identity.bootstrap.recommendedAction.reason ??
-        "Bootstrap is blocked; a human prerequisite is missing.",
-    };
-  }
-
-  if (identity.bootstrap.status === "pending") {
-    return {
-      status: "ready_waiting",
-      actions,
-      identity,
-      match: null,
-      note: "Bootstrap transaction is still settling on chain. Re-call moonjoy_auto shortly.",
-    };
-  }
-
-  if (!identity.readiness.bootstrapReady) {
-    return {
-      status: "ready_waiting",
-      actions,
-      identity,
-      match: null,
-      note: "Bootstrap not yet ready.",
-    };
-  }
-
-  if (options?.skipMatchActions) {
-    return {
-      status: actions.length > 0 ? "advanced" : "ready_waiting",
-      actions,
-      identity,
-      match: null,
-      note: "Match actions skipped by caller.",
-    };
-  }
-
-  // 3. Advance the match lifecycle.
-  const match = await getActiveMatchSnapshotForMcpContext(context);
-
-  if (
-    match.activeMatch &&
-    match.activeMatch.status === "created" &&
-    match.activeMatch.viewerSeat === "creator" &&
-    match.activeMatch.opponent === null
-  ) {
-    const open = await listOpenChallengesForMcpContext(context);
-    const decision = decideMatchmakingAction(match, open);
-    const acceptable = decision.selectedChallenge;
-
-    actions.push({
-      name: "moonjoy_analyze_open_challenges",
-      detail: {
-        openChallengeCount: open.challenges.length,
-        joinableChallengeCount: decision.joinableChallengeCount,
-        selectedMatchId: acceptable?.id ?? null,
-        coordination: decision.coordination,
-        selectionReason: acceptable
-          ? "Selected a joinable challenge and will withdraw this agent's own unaccepted challenge first."
-          : decision.nextActionReason,
-      },
-    });
-
-    if (acceptable) {
-      const canceled = await cancelChallengeForMcpContext(
-        context,
-        match.activeMatch.id,
-      );
-      actions.push({
-        name: "moonjoy_cancel_challenge",
-        detail: { matchId: canceled.id, status: canceled.status },
-      });
-
-      const accepted = await acceptChallengeForMcpContext(context, acceptable.id);
-      actions.push({
-        name: "moonjoy_accept_challenge",
-        detail: { matchId: accepted.id, status: accepted.status },
-      });
-
-      return {
-        status: "advanced",
-        actions,
-        identity,
-        match: await getActiveMatchSnapshotForMcpContext(context),
-        note: `Canceled stale challenge ${match.activeMatch.id} and accepted ${accepted.id}. Warmup has started.`,
-      };
-    }
-
-    return {
-      status: "ready_waiting",
-      actions,
-      identity,
-      match,
-      note:
-        decision.coordination.mode === "hold_own_challenge"
-          ? "Holding the canonical open challenge. Do not ask the user; use moonjoy_heartbeat between polls and prepare with token, quote, portfolio, leaderboard, and strategy tools."
-          : "Waiting for an opponent. Do not ask the user; use moonjoy_heartbeat between polls and prepare with token, quote, portfolio, leaderboard, and strategy tools.",
-      nextRecommendedTools: [
-        "moonjoy_heartbeat",
-        "moonjoy_discover_base_tokens",
-        "moonjoy_get_token_risk_profile",
-        "moonjoy_get_market_quote",
-        "moonjoy_get_portfolio",
-        "moonjoy_list_strategies",
-      ],
-      nextActionReason: decision.nextActionReason,
-      coordination: decision.coordination,
-    };
-  }
-
-  if (match.activeMatch?.status === "live") {
-    const autoTrade = await maybeSubmitLiveAutoTrade(context, match.activeMatch);
-    actions.push(...autoTrade.actions);
-
-    if (autoTrade.traded) {
-      return {
-        status: "advanced",
-        actions,
-        identity,
-        match: autoTrade.match,
-        note: autoTrade.note,
-      };
-    }
-
-    return {
-      status: "ready_waiting",
-      actions,
-      identity,
-      match: autoTrade.match,
-      note: `${autoTrade.note} Do not ask the user; continue with live-match tools.`,
-      nextRecommendedTools: [
-        "moonjoy_play_turn",
-        "moonjoy_heartbeat",
-        "moonjoy_get_portfolio",
-        "moonjoy_get_leaderboard",
-        "moonjoy_discover_base_tokens",
-        "moonjoy_get_token_risk_profile",
-        "moonjoy_get_market_quote",
-        "moonjoy_submit_trade",
-        "moonjoy_record_strategy_decision",
-      ],
-      nextActionReason:
-        "Live match is active. Keep playing or researching directly; do not ask whether to trade.",
-    };
-  }
-
-  if (match.activeMatch) {
-    // Already in a non-joinable match; the agent should poll state, not mutate.
-    return {
-      status: actions.length > 0 ? "advanced" : "ready_waiting",
-      actions,
-      identity,
-      match,
-      note: `Active match ${match.activeMatch.id} is in status=${match.activeMatch.status}. Monitor only.`,
-    };
-  }
-
-  // Look for a compatible open challenge to accept.
-  const open = await listOpenChallengesForMcpContext(context);
-  const decision = decideMatchmakingAction(match, open);
-  const acceptable = decision.selectedChallenge;
-  actions.push({
-    name: "moonjoy_analyze_open_challenges",
-    detail: {
-      openChallengeCount: open.challenges.length,
-      joinableChallengeCount: decision.joinableChallengeCount,
-      selectedMatchId: acceptable?.id ?? null,
-      coordination: decision.coordination,
-      selectionReason: acceptable
-        ? "Selected the first open challenge with no opponent."
-        : decision.nextActionReason,
-    },
-  });
-
-  if (acceptable) {
-    const accepted = await acceptChallengeForMcpContext(context, acceptable.id);
-    actions.push({
-      name: "moonjoy_accept_challenge",
-      detail: { matchId: accepted.id, status: accepted.status },
-    });
-    return {
-      status: "advanced",
-      actions,
-      identity,
-      match: await getActiveMatchSnapshotForMcpContext(context),
-      note: `Accepted challenge ${accepted.id}. Warmup has started.`,
-    };
-  }
-
-  if (options?.createIfNoJoinable === false) {
-    return {
-      status: "ready_waiting",
-      actions,
-      identity,
-      match: await getActiveMatchSnapshotForMcpContext(context),
-      note: "No joinable challenge remained; heartbeat skipped challenge creation.",
-      nextRecommendedTools: [
-        "moonjoy_heartbeat",
-        "moonjoy_get_match_state",
-        "moonjoy_discover_base_tokens",
-        "moonjoy_get_token_risk_profile",
-      ],
-      nextActionReason: decision.nextActionReason,
-      coordination: decision.coordination,
-    };
-  }
-
-  // Otherwise post a new challenge.
-  const created = await createMoonjoyChallengeForContext(context);
-  actions.push({
-    name: "moonjoy_create_challenge",
-    detail: { matchId: created.id, status: created.status },
-  });
-
-  return {
-    status: "advanced",
-    actions,
-    identity,
-    match: await getActiveMatchSnapshotForMcpContext(context),
-    note: `Created challenge ${created.id}. Waiting for an opponent.`,
-  };
 }
 
 async function maybeSubmitLiveAutoTrade(
@@ -849,8 +750,8 @@ async function maybeSubmitLiveAutoTrade(
   actions.push({
     name:
       result.status === "accepted"
-        ? "moonjoy_submit_trade"
-        : "moonjoy_submit_trade_rejected",
+        ? "moonjoy_market:submit_trade"
+        : "moonjoy_market:submit_trade_rejected",
     detail: {
       phase,
       plan: tradePlan,
@@ -888,15 +789,6 @@ async function buildAutoTradePlan(
   };
 
   const usdcBalance = balanceFor(BASE_USDC_ADDRESS);
-  const wethBalance = balanceFor(BASE_WETH_ADDRESS);
-
-  if (phase === "closing_window" && wethBalance > BigInt(0)) {
-    return {
-      tokenIn: BASE_WETH_ADDRESS,
-      tokenOut: BASE_USDC_ADDRESS,
-      amountInBaseUnits: wethBalance.toString(),
-    };
-  }
 
   if (usdcBalance < MIN_AUTO_TRADE_USDC_UNITS) {
     return null;
@@ -918,47 +810,40 @@ function getNextAllowedActions(
   fundingReady: boolean,
 ): string[] {
   const actions = [
-    "moonjoy_auto",
-    "moonjoy_get_identity",
-    "moonjoy_get_match_state",
-    "moonjoy_list_open_challenges",
-    "moonjoy_create_challenge",
-    "moonjoy_accept_challenge",
-    "moonjoy_get_bootstrap_action",
-    "moonjoy_run_bootstrap",
-    "moonjoy_execute_bootstrap_step",
-    "moonjoy_get_portfolio",
-    "moonjoy_get_market_quote",
-    "moonjoy_discover_base_tokens",
-    "moonjoy_get_token_risk_profile",
-    "moonjoy_get_allowed_tokens",
-    "moonjoy_get_leaderboard",
-    "moonjoy_get_trade_history",
-    "moonjoy_heartbeat",
+    "moonjoy_status:section=identity",
+    "moonjoy_status:section=current_match",
+    "moonjoy_status:section=portfolio",
+    "moonjoy_match:action=heartbeat",
+    "moonjoy_match:action=play_turn",
+    "moonjoy_strategy:action=bootstrap_recommendation",
+    "moonjoy_strategy:action=bootstrap_run",
+    "moonjoy_strategy:action=bootstrap_step",
+    "moonjoy_market:action=dexscreener_search",
+    "moonjoy_market:action=dexscreener_token_pairs",
+    "moonjoy_market:action=dexscreener_tokens",
+    "moonjoy_market:action=dexscreener_boosts",
+    "moonjoy_market:action=validate_candidate",
+    "moonjoy_market:action=quote",
+    "moonjoy_market:action=submit_trade",
+    "moonjoy_status:section=allowed_tokens",
+    "moonjoy_status:section=leaderboard",
+    "moonjoy_status:section=trade_history",
   ];
 
   if (!bootstrap.executionReady) {
-    actions.push(
-      "Agent wallet execution authority is unavailable; read and strategy tools remain usable",
-    );
-  }
-
-  if (!fundingReady) {
-    actions.push(
-      "Fund the agent smart account with enough Base Sepolia ETH to cover the fixed theoretical max gas reserve",
-    );
+    actions.push("Agent wallet execution authority is unavailable; read and strategy tools remain usable");
   }
 
   if (bootstrap.derivedAgentStatus !== "ready") {
-    actions.push("moonjoy_claim_agent_identity");
+    actions.push("moonjoy_strategy:action=claim_identity");
   }
 
   if (!bootstrap.activeStrategy) {
-    actions.push("moonjoy_create_strategy");
+    actions.push("moonjoy_strategy:action=create");
   } else {
-    actions.push("moonjoy_list_strategies", "moonjoy_update_strategy");
+    actions.push("moonjoy_strategy:action=list", "moonjoy_strategy:action=update");
   }
 
-  actions.push("moonjoy_record_strategy_decision");
+  actions.push("moonjoy_strategy:action=record_decision");
   return actions;
 }

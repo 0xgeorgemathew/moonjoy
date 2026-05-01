@@ -96,7 +96,7 @@ function buildMatchNotification(
         matchId: input.matchId,
         status: input.status,
         payload: input.payload ?? {},
-        recommendedTool: "moonjoy_auto",
+        recommendedTool: "moonjoy_match:action=heartbeat",
         createdAt: new Date().toISOString(),
       },
     },

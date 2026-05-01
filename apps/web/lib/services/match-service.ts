@@ -1,5 +1,4 @@
 import {
-  acceptChallenge,
   createMatch,
   getNextTransitionAt,
   isSettlementGraceExpired,
@@ -15,7 +14,6 @@ import type { Address } from "viem";
 import { getFullNameForAddress } from "@/lib/services/ens-service";
 import { resolveUser } from "@/lib/services/ens-resolution-service";
 import {
-  notifyArenaMatchmakingSessions,
   notifyMatchEventSessions,
 } from "@/lib/services/mcp-session-notification-service";
 import { tickActiveMatch } from "@/lib/services/worker-loop-service";
@@ -31,7 +29,6 @@ import type {
   MatchRow,
   MatchView,
   MatchViewer,
-  OpenChallengeSnapshot,
 } from "@/lib/types/match";
 
 const ACTIVE_MATCH_STATUSES: MatchStatus[] = [
@@ -77,10 +74,6 @@ type MatchActor = {
   agentEnsName: string;
 };
 
-type CreateChallengeOptions = {
-  invitedUserId?: string | null;
-};
-
 type SettlementInput = {
   creatorStartingValueUsd: number;
   creatorCurrentValueUsd: number;
@@ -95,35 +88,6 @@ export class MatchServiceError extends Error {
   ) {
     super(message);
   }
-}
-
-export async function createChallengeForUser(
-  privyUserId: string,
-  options: CreateChallengeOptions = {},
-): Promise<MatchView> {
-  const actor = await getActorForPrivyUser(privyUserId);
-  return createChallenge(actor, options);
-}
-
-export async function createChallengeForMcpContext(
-  context: McpRuntimeContext,
-): Promise<MatchView> {
-  const actor = await getActorForMcpContext(context);
-  return createChallenge(actor);
-}
-
-export async function listOpenChallengesForUser(
-  privyUserId: string,
-): Promise<OpenChallengeSnapshot> {
-  const actor = await getActorForPrivyUser(privyUserId);
-  return listOpenChallenges(actor);
-}
-
-export async function listOpenChallengesForMcpContext(
-  context: McpRuntimeContext,
-): Promise<OpenChallengeSnapshot> {
-  const actor = await getActorForMcpContext(context);
-  return listOpenChallenges(actor);
 }
 
 export async function getActiveMatchSnapshotForUser(
@@ -156,38 +120,6 @@ export async function getMatchByIdForMcpContext(
   return getMatchById(actor, matchId);
 }
 
-export async function acceptChallengeForUser(
-  privyUserId: string,
-  matchId: string,
-): Promise<MatchView> {
-  const actor = await getActorForPrivyUser(privyUserId);
-  return acceptOpenChallenge(actor, matchId);
-}
-
-export async function acceptChallengeForMcpContext(
-  context: McpRuntimeContext,
-  matchId: string,
-): Promise<MatchView> {
-  const actor = await getActorForMcpContext(context);
-  return acceptOpenChallenge(actor, matchId);
-}
-
-export async function cancelChallengeForUser(
-  privyUserId: string,
-  matchId: string,
-): Promise<MatchView> {
-  const actor = await getActorForPrivyUser(privyUserId);
-  return cancelOpenChallenge(actor, matchId);
-}
-
-export async function cancelChallengeForMcpContext(
-  context: McpRuntimeContext,
-  matchId: string,
-): Promise<MatchView> {
-  const actor = await getActorForMcpContext(context);
-  return cancelOpenChallenge(actor, matchId);
-}
-
 export async function startWarmupForUser(
   privyUserId: string,
   matchId: string,
@@ -213,80 +145,6 @@ export async function settleMatchForUser(
   return settleMatchById(actor, matchId, input);
 }
 
-async function createChallenge(
-  actor: MatchActor,
-  options: CreateChallengeOptions = {},
-): Promise<MatchView> {
-  await reconcileLatestActiveMatchForAgent(actor.agentId);
-
-  const now = new Date();
-  const state = createMatch({
-    id: crypto.randomUUID(),
-    creator: toGameParticipant(actor),
-    createdAt: now,
-  });
-
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .rpc("create_open_match", {
-      p_match_id: state.id,
-      p_creator_user_id: state.creator.userId,
-      p_creator_agent_id: state.creator.agentId,
-      p_creator_smart_account_address: state.creator.smartAccountAddress,
-      p_wager_usd: state.config.wagerUsd,
-      p_live_duration_seconds: state.config.durationSeconds,
-      p_warmup_duration_seconds: state.config.warmupSeconds,
-      p_settlement_grace_seconds: state.config.settlementGraceSeconds,
-      p_starting_capital_usd: state.config.startingCapitalUsd,
-      p_created_at: state.timing.createdAt.toISOString(),
-      p_invited_user_id: options.invitedUserId ?? null,
-      p_invite_code: options.invitedUserId ? crypto.randomUUID() : null,
-    })
-    .single();
-
-  if (error || !data) {
-    throw mapMatchMutationError(error, "Failed to create challenge.");
-  }
-
-  const row = data as unknown as MatchRow;
-  await recordMatchEvent(row, "challenge.created", {
-    creatorAgentId: actor.agentId,
-    creatorUserId: actor.userId,
-  });
-
-  return presentMatch(row, actor.agentId);
-}
-
-async function listOpenChallenges(actor: MatchActor): Promise<OpenChallengeSnapshot> {
-  const supabase = createAdminClient();
-  const query = supabase
-    .from("matches")
-    .select(MATCH_COLUMNS)
-    .eq("status", "created")
-    .is("opponent_agent_id", null)
-    .neq("creator_agent_id", actor.agentId)
-    .or(`invited_user_id.is.null,invited_user_id.eq.${actor.userId}`)
-    .order("created_at", { ascending: false })
-    .limit(25);
-  const { data, error } = await query;
-
-  if (error) {
-    throw new MatchServiceError("Failed to list open challenges.", 500);
-  }
-
-  const challenges = await Promise.all(
-    (((data as unknown as MatchRow[] | null) ?? [])).map((row) =>
-      presentMatch(row, actor.agentId),
-    ),
-  );
-
-  return {
-    viewer: toViewer(actor),
-    challenges,
-    generatedAt: new Date().toISOString(),
-  };
-}
-
 async function getActiveSnapshot(actor: MatchActor): Promise<ActiveMatchSnapshot> {
   const row = await findLatestMatchForAgent(actor.agentId);
   const reconciled = row ? await reconcilePersistedMatch(row) : null;
@@ -294,12 +152,10 @@ async function getActiveSnapshot(actor: MatchActor): Promise<ActiveMatchSnapshot
     reconciled && ACTIVE_MATCH_STATUSES.includes(reconciled.status)
       ? await presentMatch(reconciled, actor.agentId)
       : null;
-  const openChallengeCount = await countOpenChallengesVisibleTo(actor);
 
   return {
     viewer: toViewer(actor),
     activeMatch,
-    openChallengeCount,
     generatedAt: new Date().toISOString(),
   };
 }
@@ -307,89 +163,6 @@ async function getActiveSnapshot(actor: MatchActor): Promise<ActiveMatchSnapshot
 async function getMatchById(actor: MatchActor, matchId: string): Promise<MatchView> {
   const row = await requireOwnedMatch(matchId, actor.agentId);
   return presentMatch(row, actor.agentId);
-}
-
-async function acceptOpenChallenge(
-  actor: MatchActor,
-  matchId: string,
-): Promise<MatchView> {
-  await reconcileLatestActiveMatchForAgent(actor.agentId);
-
-  const supabase = createAdminClient();
-  await assertInviteAcceptable(matchId, actor.userId);
-  const acceptedAt = new Date();
-  const { data, error } = await supabase
-    .rpc("accept_open_match", {
-      p_match_id: matchId,
-      p_opponent_user_id: actor.userId,
-      p_opponent_agent_id: actor.agentId,
-      p_opponent_smart_account_address: actor.smartAccountAddress,
-      p_accepted_at: acceptedAt.toISOString(),
-    })
-    .single();
-
-  if (error || !data) {
-    throw mapMatchMutationError(
-      error,
-      "Challenge was already accepted or is no longer available.",
-    );
-  }
-
-  const row = data as unknown as MatchRow;
-  await recordMatchEvent(row, "challenge.accepted", {
-    creatorAgentId: row.creator_agent_id,
-    opponentAgentId: actor.agentId,
-  });
-
-  return presentMatch(row, actor.agentId);
-}
-
-async function cancelOpenChallenge(
-  actor: MatchActor,
-  matchId: string,
-): Promise<MatchView> {
-  const row = await requireOwnedMatch(matchId, actor.agentId);
-
-  if (row.creator_agent_id !== actor.agentId) {
-    throw new MatchServiceError("Only the challenge creator can cancel it.", 403);
-  }
-
-  if (row.status !== "created" || row.opponent_agent_id) {
-    throw new MatchServiceError(
-      "Only open, unaccepted challenges can be canceled.",
-      409,
-    );
-  }
-
-  const supabase = createAdminClient();
-  const { data, error } = await supabase
-    .from("matches")
-    .update({
-      status: "canceled",
-      result_summary: {
-        outcome: "canceled",
-        reason: "creator_withdrew_open_challenge",
-      },
-      updated_at: new Date().toISOString(),
-    })
-    .eq("id", row.id)
-    .eq("creator_agent_id", actor.agentId)
-    .eq("status", "created")
-    .is("opponent_agent_id", null)
-    .select(MATCH_COLUMNS)
-    .single();
-
-  if (error || !data) {
-    throw new MatchServiceError("Failed to cancel open challenge.", 409);
-  }
-
-  const canceled = data as unknown as MatchRow;
-  await recordMatchEvent(canceled, "challenge.canceled", {
-    creatorAgentId: actor.agentId,
-    creatorUserId: actor.userId,
-  });
-
-  return presentMatch(canceled, actor.agentId);
 }
 
 async function ensureWarmup(actor: MatchActor, matchId: string): Promise<MatchView> {
@@ -541,8 +314,6 @@ async function resolveParticipantView(
   agentId: string,
   smartAccountAddress: string,
 ): Promise<MatchParticipantView> {
-  // Both helpers are cached in ens-service, so polling match state in a
-  // loop no longer forces round-trips for every participant every call.
   const [userResolution, agentEnsName] = await Promise.all([
     resolveUser(userId),
     getFullNameForAddress(smartAccountAddress as Address),
@@ -614,7 +385,6 @@ async function buildActorFromRecord(record: UserAgentRecord): Promise<MatchActor
     throw new MatchServiceError("Agent smart account is missing.", 409);
   }
 
-  // Parallelize the two ENS resolutions; both are cached after first hit.
   const [userResolution, agentEnsName] = await Promise.all([
     resolveUser(record.user.id),
     getFullNameForAddress(agentAddress as Address),
@@ -669,23 +439,6 @@ async function findLatestMatchForAgent(agentId: string): Promise<MatchRow | null
   return (active.data as unknown as MatchRow | null) ?? null;
 }
 
-async function countOpenChallengesVisibleTo(actor: MatchActor): Promise<number> {
-  const supabase = createAdminClient();
-  const { count, error } = await supabase
-    .from("matches")
-    .select("id", { count: "exact", head: true })
-    .eq("status", "created")
-    .is("opponent_agent_id", null)
-    .neq("creator_agent_id", actor.agentId)
-    .or(`invited_user_id.is.null,invited_user_id.eq.${actor.userId}`);
-
-  if (error) {
-    throw new MatchServiceError("Failed to count open challenges.", 500);
-  }
-
-  return count ?? 0;
-}
-
 async function requireOwnedMatch(
   matchId: string,
   agentId: string,
@@ -699,25 +452,6 @@ async function requireOwnedMatch(
   }
 
   return row;
-}
-
-async function requireOpenChallenge(matchId: string): Promise<MatchRow> {
-  const row = await fetchMatchRow(matchId);
-  if (row.status !== "created" || row.opponent_agent_id) {
-    throw new MatchServiceError("Challenge is no longer open.", 409);
-  }
-
-  return row;
-}
-
-async function assertInviteAcceptable(
-  matchId: string,
-  acceptingUserId: string,
-): Promise<void> {
-  const row = await requireOpenChallenge(matchId);
-  if (row.invited_user_id && row.invited_user_id !== acceptingUserId) {
-    throw new MatchServiceError("This invite is for a different user.", 403);
-  }
 }
 
 async function fetchMatchRow(matchId: string): Promise<MatchRow> {
@@ -778,13 +512,6 @@ async function reconcilePersistedMatch(row: MatchRow): Promise<MatchRow> {
 
     throw error;
   }
-}
-
-async function reconcileLatestActiveMatchForAgent(
-  agentId: string,
-): Promise<MatchRow | null> {
-  const row = await findLatestMatchForAgent(agentId);
-  return row ? reconcilePersistedMatch(row) : null;
 }
 
 async function autoSettleUnscoredMatch(
@@ -874,7 +601,6 @@ async function recordMatchEvent(
   await Promise.all([
     broadcastMatchUpdate(row, eventType),
     notifyMatchUpdate(row, eventType, payload),
-    notifyArenaMatchmakingUpdate(row, eventType, payload),
   ]);
 }
 
@@ -895,31 +621,7 @@ async function notifyMatchUpdate(
     status: row.status,
     payload: {
       ...payload,
-      nextRecommendedTool: "moonjoy_auto",
-    },
-  });
-}
-
-async function notifyArenaMatchmakingUpdate(
-  row: MatchRow,
-  eventType: string,
-  payload: Record<string, unknown>,
-): Promise<void> {
-  if (eventType !== "challenge.created" && eventType !== "challenge.canceled") {
-    return;
-  }
-
-  await notifyArenaMatchmakingSessions({
-    eventType,
-    matchId: row.id,
-    status: row.status,
-    payload: {
-      ...payload,
-      nextRecommendedTool: "moonjoy_auto",
-      reason:
-        eventType === "challenge.created"
-          ? "A new open challenge is available. Re-read match state and coordinate through moonjoy_auto."
-          : "An open challenge changed. Re-read match state and coordinate through moonjoy_auto.",
+      nextRecommendedTool: "moonjoy_match:action=heartbeat",
     },
   });
 }
@@ -1047,35 +749,6 @@ function matchRowToState(row: MatchRow): MatchState {
   };
 }
 
-function matchStateToInsertRow(state: MatchState): Record<string, unknown> {
-  return {
-    id: state.id,
-    creator_user_id: state.creator.userId,
-    creator_agent_id: state.creator.agentId,
-    creator_smart_account_address: state.creator.smartAccountAddress,
-    invited_user_id: null,
-    invite_code: null,
-    opponent_user_id: state.opponent?.userId ?? null,
-    opponent_agent_id: state.opponent?.agentId ?? null,
-    opponent_smart_account_address: state.opponent?.smartAccountAddress ?? null,
-    status: state.status,
-    wager_usd: state.config.wagerUsd,
-    live_duration_seconds: state.config.durationSeconds,
-    warmup_duration_seconds: state.config.warmupSeconds,
-    settlement_grace_seconds: state.config.settlementGraceSeconds,
-    starting_capital_usd: state.config.startingCapitalUsd,
-    winner_seat: null,
-    winner_agent_id: null,
-    result_summary: {},
-    created_at: state.timing.createdAt.toISOString(),
-    warmup_started_at: null,
-    live_started_at: null,
-    live_ends_at: null,
-    settling_started_at: null,
-    settled_at: null,
-  };
-}
-
 function matchStateToUpdateRow(state: MatchState): Record<string, unknown> {
   return {
     creator_user_id: state.creator.userId,
@@ -1122,19 +795,4 @@ function assertSettlementInput(input: SettlementInput): void {
       400,
     );
   }
-}
-
-function mapMatchMutationError(
-  error: { code?: string; message?: string } | null,
-  fallbackMessage: string,
-): MatchServiceError {
-  if (!error) {
-    return new MatchServiceError(fallbackMessage, 500);
-  }
-
-  if (error.code === "P0001") {
-    return new MatchServiceError(error.message ?? fallbackMessage, 409);
-  }
-
-  return new MatchServiceError(fallbackMessage, 500);
 }

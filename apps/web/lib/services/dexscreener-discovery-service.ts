@@ -1,12 +1,12 @@
-import { BASE_CHAIN_ID, DISCOVERY_DEFAULTS, type RiskTier } from "@moonjoy/game";
+import { BASE_CHAIN_ID, type RiskTier } from "@moonjoy/game";
 import { createAdminClient } from "@/lib/supabase/admin";
-import { fetchExactInputQuote } from "@/lib/services/uniswap-quote-service";
 
 const DEXSCREENER_BASE = "https://api.dexscreener.com";
 
 type DexscreenerPair = {
   chainId: string;
   dexId: string;
+  pairAddress: string;
   baseToken: { address: string; symbol: string; name: string };
   quoteToken: { address: string; symbol: string };
   liquidity: { usd: number } | null;
@@ -14,31 +14,38 @@ type DexscreenerPair = {
   txns: { h1: { buys: number; sells: number } } | null;
   pairCreatedAt: number | null;
   priceUsd: string | null;
+  boostId: string | null;
+  profile: { links: Record<string, string> } | null;
 };
 
 export type DiscoveryFilter = {
   query?: string;
-  minLiquidityUsd?: number;
-  minVolume24hUsd?: number;
-  minTxns1h?: number;
-  maxAgeHours?: number;
 };
 
-export type DiscoveredToken = {
+export type RawDiscoveredToken = {
   address: string;
   symbol: string;
   name: string;
-  riskTier: RiskTier;
+  chainId: string;
+  dexId: string;
+  pairAddress: string;
+  quoteTokenAddress: string;
+  quoteTokenSymbol: string;
   liquidityUsd: number;
   volume24hUsd: number;
-  txns1h: number;
+  txns1hBuys: number;
+  txns1hSells: number;
   priceUsd: number | null;
+  pairAgeHours: number | null;
+  boostId: string | null;
+  profileLinks: Record<string, string> | null;
+  riskWarnings: string[];
 };
 
 export type DiscoveryResult = {
-  tokens: DiscoveredToken[];
-  rejectedCount: number;
-  rejectionReasons: Array<{ address: string; reason: string }>;
+  tokens: RawDiscoveredToken[];
+  warningCount: number;
+  rawPairCount: number;
 };
 
 async function fetchDexscreener(
@@ -80,15 +87,32 @@ function selectBestPair(pairs: DexscreenerPair[]): DexscreenerPair | null {
   return sorted[0] ?? null;
 }
 
+function computeWarnings(pair: DexscreenerPair): string[] {
+  const warnings: string[] = [];
+  const liquidity = pair.liquidity?.usd ?? 0;
+  const volume = pair.volume?.h24 ?? 0;
+  const txns = (pair.txns?.h1?.buys ?? 0) + (pair.txns?.h1?.sells ?? 0);
+
+  if (liquidity < 10_000) warnings.push("low_liquidity");
+  if (volume < 1_000) warnings.push("low_24h_volume");
+  if (txns < 5) warnings.push("low_1h_txn_count");
+
+  if (pair.pairCreatedAt) {
+    const ageHours = (Date.now() - pair.pairCreatedAt) / (1000 * 60 * 60);
+    if (ageHours < 24) warnings.push("new_pair");
+  } else {
+    warnings.push("unknown_pair_age");
+  }
+
+  if (pair.boostId) warnings.push("boosted_listing");
+
+  return warnings;
+}
+
 export async function discoverBaseTokens(
   filter: DiscoveryFilter = {},
   matchId?: string,
 ): Promise<DiscoveryResult> {
-  const minLiquidity = filter.minLiquidityUsd ?? DISCOVERY_DEFAULTS.minLiquidityUsd;
-  const minVolume = filter.minVolume24hUsd ?? DISCOVERY_DEFAULTS.minVolume24hUsd;
-  const minTxns = filter.minTxns1h ?? DISCOVERY_DEFAULTS.minTxns1h;
-  const maxAge = filter.maxAgeHours ?? DISCOVERY_DEFAULTS.minPairAgeHours;
-
   let rawPairs: DexscreenerPair[] = [];
 
   if (filter.query) {
@@ -108,72 +132,65 @@ export async function discoverBaseTokens(
       const batch = await fetchDexscreener(
         `/tokens/v1/base/${baseTokens.slice(0, 30).join(",")}`,
       );
-      const pairs = batch.pairs as DexscreenerPair[] | undefined;
-      rawPairs = pairs ?? [];
+      if (Array.isArray(batch)) {
+        rawPairs = batch as unknown as DexscreenerPair[];
+      } else {
+        const pairs = batch.pairs as DexscreenerPair[] | undefined;
+        rawPairs = pairs ?? [];
+      }
     }
   }
 
-  const rejected: Array<{ address: string; reason: string }> = [];
   const grouped = groupByToken(rawPairs);
-  const candidates: DiscoveredToken[] = [];
+  const candidates: RawDiscoveredToken[] = [];
+  let warningCount = 0;
 
-  for (const [address, pairs] of grouped) {
+  for (const [_address, pairs] of grouped) {
     const best = selectBestPair(pairs);
     if (!best) continue;
 
-    const liquidity = best.liquidity?.usd ?? 0;
-    const volume = best.volume?.h24 ?? 0;
-    const txns = (best.txns?.h1?.buys ?? 0) + (best.txns?.h1?.sells ?? 0);
+    const riskWarnings = computeWarnings(best);
+    if (riskWarnings.length > 0) warningCount++;
 
-    if (liquidity < minLiquidity) {
-      rejected.push({ address, reason: `Liquidity $${liquidity} < $${minLiquidity}` });
-      continue;
-    }
-    if (volume < minVolume) {
-      rejected.push({ address, reason: `Volume $${volume} < $${minVolume}` });
-      continue;
-    }
-    if (txns < minTxns) {
-      rejected.push({ address, reason: `Txns ${txns} < ${minTxns}` });
-      continue;
-    }
-    if (best.pairCreatedAt) {
-      const ageHours = (Date.now() - best.pairCreatedAt) / (1000 * 60 * 60);
-      if (ageHours < maxAge) {
-        rejected.push({ address, reason: `Pair age ${ageHours.toFixed(1)}h < ${maxAge}h` });
-        continue;
-      }
-    } else {
-      rejected.push({ address, reason: "Pair creation date unknown." });
-      continue;
-    }
+    const pairAgeHours = best.pairCreatedAt
+      ? (Date.now() - best.pairCreatedAt) / (1000 * 60 * 60)
+      : null;
 
     candidates.push({
-      address,
+      address: toChecksum(best.baseToken.address),
       symbol: best.baseToken.symbol,
       name: best.baseToken.name,
-      riskTier: "discovered",
-      liquidityUsd: liquidity,
-      volume24hUsd: volume,
-      txns1h: txns,
+      chainId: best.chainId,
+      dexId: best.dexId,
+      pairAddress: best.pairAddress,
+      quoteTokenAddress: toChecksum(best.quoteToken.address),
+      quoteTokenSymbol: best.quoteToken.symbol,
+      liquidityUsd: best.liquidity?.usd ?? 0,
+      volume24hUsd: best.volume?.h24 ?? 0,
+      txns1hBuys: best.txns?.h1?.buys ?? 0,
+      txns1hSells: best.txns?.h1?.sells ?? 0,
       priceUsd: best.priceUsd ? parseFloat(best.priceUsd) : null,
+      pairAgeHours,
+      boostId: best.boostId ?? null,
+      profileLinks: best.profile?.links ?? null,
+      riskWarnings,
     });
   }
 
   if (matchId) {
-    await storeDiscoverySnapshot(matchId, filter.query, rawPairs, candidates, rejected);
+    await storeDiscoverySnapshot(matchId, filter.query, rawPairs, candidates);
   }
 
   return {
     tokens: candidates,
-    rejectedCount: rejected.length,
-    rejectionReasons: rejected,
+    warningCount,
+    rawPairCount: rawPairs.length,
   };
 }
 
 export async function getTokenRiskProfile(
   tokenAddress: string,
-  swapperAddress: string,
+  _swapperAddress: string,
 ): Promise<{
   address: string;
   symbol: string | null;
@@ -184,8 +201,11 @@ export async function getTokenRiskProfile(
     volume24hUsd: number;
     txns1h: number;
     priceUsd: number | null;
+    pairAddress: string;
+    dexId: string;
+    pairAgeHours: number | null;
+    riskWarnings: string[];
   } | null;
-  quoteAvailable: boolean;
 }> {
   const supabase = createAdminClient();
   const { data: existing } = await supabase
@@ -196,50 +216,51 @@ export async function getTokenRiskProfile(
     .eq("is_active", true)
     .maybeSingle();
 
-  if (existing) {
-    const pairData = await fetchDexscreener(
-      `/token-pairs/v1/base/${tokenAddress}`,
-    );
-    const pairs = (pairData.pairs as DexscreenerPair[] | undefined) ?? [];
-    const best = selectBestPair(pairs);
+  const symbol = existing ? (existing as Record<string, unknown>).symbol as string : null;
+  const name = existing ? (existing as Record<string, unknown>).name as string : null;
+  const riskTier = existing ? (existing as Record<string, unknown>).risk_tier as RiskTier : null;
 
-    let quoteAvailable = false;
-    try {
-      const USDC = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913" as `0x${string}`;
-      await fetchExactInputQuote({
-        swapper: swapperAddress as `0x${string}`,
-        tokenIn: USDC,
-        tokenOut: tokenAddress as `0x${string}`,
-        amountBaseUnits: "1000000",
-        slippageBps: 100,
-      });
-      quoteAvailable = true;
-    } catch {}
+  const pairData = await fetchDexscreener(
+    `/token-pairs/v1/base/${tokenAddress}`,
+  );
+  let pairs: DexscreenerPair[];
+  if (Array.isArray(pairData)) {
+    pairs = pairData as unknown as DexscreenerPair[];
+  } else {
+    pairs = (pairData.pairs as DexscreenerPair[] | undefined) ?? [];
+  }
+  const best = selectBestPair(pairs);
+
+  if (best) {
+    const riskWarnings = computeWarnings(best);
+    const pairAgeHours = best.pairCreatedAt
+      ? (Date.now() - best.pairCreatedAt) / (1000 * 60 * 60)
+      : null;
 
     return {
       address: tokenAddress,
-      symbol: existing.symbol,
-      name: existing.name,
-      riskTier: existing.risk_tier as RiskTier,
-      pairSummary: best
-        ? {
-            liquidityUsd: best.liquidity?.usd ?? 0,
-            volume24hUsd: best.volume?.h24 ?? 0,
-            txns1h: (best.txns?.h1?.buys ?? 0) + (best.txns?.h1?.sells ?? 0),
-            priceUsd: best.priceUsd ? parseFloat(best.priceUsd) : null,
-          }
-        : null,
-      quoteAvailable,
+      symbol,
+      name,
+      riskTier,
+      pairSummary: {
+        liquidityUsd: best.liquidity?.usd ?? 0,
+        volume24hUsd: best.volume?.h24 ?? 0,
+        txns1h: (best.txns?.h1?.buys ?? 0) + (best.txns?.h1?.sells ?? 0),
+        priceUsd: best.priceUsd ? parseFloat(best.priceUsd) : null,
+        pairAddress: best.pairAddress,
+        dexId: best.dexId,
+        pairAgeHours,
+        riskWarnings,
+      },
     };
   }
 
   return {
     address: tokenAddress,
-    symbol: null,
-    name: null,
-    riskTier: null,
+    symbol,
+    name,
+    riskTier,
     pairSummary: null,
-    quoteAvailable: false,
   };
 }
 
@@ -247,8 +268,7 @@ async function storeDiscoverySnapshot(
   matchId: string,
   query: string | undefined,
   rawPairs: DexscreenerPair[],
-  filtered: DiscoveredToken[],
-  rejected: Array<{ address: string; reason: string }>,
+  candidates: RawDiscoveredToken[],
 ): Promise<void> {
   const supabase = createAdminClient();
   await supabase.from("token_discovery_snapshots").insert({
@@ -256,7 +276,7 @@ async function storeDiscoverySnapshot(
     query: query ?? null,
     raw_source: "dexscreener",
     raw_payload: rawPairs,
-    filtered_payload: filtered,
-    rejected_payload: rejected,
+    filtered_payload: candidates,
+    rejected_payload: [],
   });
 }

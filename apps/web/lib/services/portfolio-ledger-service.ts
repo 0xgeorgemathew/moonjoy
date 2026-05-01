@@ -10,9 +10,20 @@ export type LedgerBalance = {
   amountBaseUnits: string;
 };
 
+export type BalanceDetail = {
+  tokenAddress: string;
+  symbol: string;
+  decimals: number;
+  amountBaseUnits: string;
+  valueUsd: number;
+  priceSource: string;
+  quoteId: string | null;
+};
+
 export type ValuationResult = {
   startingValueUsd: number;
   currentValueUsd: number;
+  usdcBalanceUsd: number;
   realizedPnlUsd: number;
   unrealizedPnlUsd: number;
   totalPnlUsd: number;
@@ -24,6 +35,7 @@ export type ValuationResult = {
   maxDrawdownPercent: number;
   stale: boolean;
   quoteSnapshotIds: string[];
+  balanceDetails: BalanceDetail[];
 };
 
 export async function initializeStartingBalances(
@@ -242,13 +254,26 @@ export async function computeValuation(
   const realizedPnlUsd = await getRealizedPnl(matchId, agentId);
 
   let currentValueUsd = 0;
+  let usdcBalanceUsd = 0;
   let stale = false;
   const quoteSnapshotIds: string[] = [];
+  const balanceDetails: BalanceDetail[] = [];
+  const tokenInfoMap = await loadTokenInfoForBalances(balances);
 
   for (const balance of balances) {
     if (balance.tokenAddress.toLowerCase() === USDC_ADDRESS.toLowerCase()) {
       const usdcAmount = Number(balance.amountBaseUnits) / 1_000_000;
       currentValueUsd += usdcAmount;
+      usdcBalanceUsd = usdcAmount;
+      balanceDetails.push({
+        tokenAddress: balance.tokenAddress,
+        symbol: "USDC",
+        decimals: 6,
+        amountBaseUnits: balance.amountBaseUnits,
+        valueUsd: usdcAmount,
+        priceSource: "native",
+        quoteId: null,
+      });
       continue;
     }
 
@@ -258,17 +283,45 @@ export async function computeValuation(
       swapperAddress,
     );
 
+    const info = tokenInfoMap.get(balance.tokenAddress.toLowerCase());
+
     if (quote) {
       quoteSnapshotIds.push(quote.snapshotId);
-      currentValueUsd += Number(quote.outputAmount) / 1_000_000;
+      const valUsd = Number(quote.outputAmount) / 1_000_000;
+      currentValueUsd += valUsd;
+      balanceDetails.push({
+        tokenAddress: balance.tokenAddress,
+        symbol: info?.symbol ?? "",
+        decimals: info?.decimals ?? 18,
+        amountBaseUnits: balance.amountBaseUnits,
+        valueUsd: valUsd,
+        priceSource: "uniswap_quote",
+        quoteId: quote.snapshotId,
+      });
     } else {
       stale = true;
       if (options.final) {
-        // Use conservative 0 for unpriceable positions in final settlement
+        balanceDetails.push({
+          tokenAddress: balance.tokenAddress,
+          symbol: info?.symbol ?? "",
+          decimals: info?.decimals ?? 18,
+          amountBaseUnits: balance.amountBaseUnits,
+          valueUsd: 0,
+          priceSource: "none",
+          quoteId: null,
+        });
       } else {
-        // Try to use last known valuation
         const lastValue = await getLastKnownValue(matchId, agentId, balance.tokenAddress);
         currentValueUsd += lastValue;
+        balanceDetails.push({
+          tokenAddress: balance.tokenAddress,
+          symbol: info?.symbol ?? "",
+          decimals: info?.decimals ?? 18,
+          amountBaseUnits: balance.amountBaseUnits,
+          valueUsd: lastValue,
+          priceSource: "last_known",
+          quoteId: null,
+        });
       }
     }
   }
@@ -289,10 +342,12 @@ export async function computeValuation(
   const result: ValuationResult = {
     startingValueUsd,
     currentValueUsd,
+    usdcBalanceUsd,
     ...breakdown,
     maxDrawdownPercent,
     stale,
     quoteSnapshotIds,
+    balanceDetails,
   };
 
   await storeValuationSnapshot(matchId, agentId, phase, result, startingValueUsd);
@@ -314,6 +369,7 @@ async function storeValuationSnapshot(
     phase,
     starting_value_usd: startingValueUsd,
     current_value_usd: result.currentValueUsd,
+    usdc_balance_usd: result.usdcBalanceUsd,
     realized_pnl_usd: result.realizedPnlUsd,
     unrealized_pnl_usd: result.unrealizedPnlUsd,
     total_pnl_usd: result.totalPnlUsd,
@@ -323,15 +379,54 @@ async function storeValuationSnapshot(
     max_drawdown_percent: result.maxDrawdownPercent,
     quote_snapshot_ids: result.quoteSnapshotIds,
     stale: result.stale,
+    balances: result.balanceDetails,
   });
 }
 
 async function getLastKnownValue(
   matchId: string,
-  _agentId: string,
-  _tokenAddress: string,
+  agentId: string,
+  tokenAddress: string,
 ): Promise<number> {
+  const supabase = createAdminClient();
+  const normalized = tokenAddress.toLowerCase();
+  const { data } = await supabase
+    .from("portfolio_valuation_snapshots")
+    .select("balances")
+    .eq("match_id", matchId)
+    .eq("agent_id", agentId)
+    .order("created_at", { ascending: false })
+    .limit(5);
+
+  if (!data) return 0;
+
+  for (const snap of data) {
+    const balances = snap.balances as BalanceDetail[] | null;
+    if (!balances) continue;
+    const entry = balances.find((b) => b.tokenAddress.toLowerCase() === normalized && b.valueUsd > 0);
+    if (entry) return entry.valueUsd;
+  }
+
   return 0;
+}
+
+async function loadTokenInfoForBalances(
+  balances: LedgerBalance[],
+): Promise<Map<string, { symbol: string; decimals: number }>> {
+  if (balances.length === 0) return new Map();
+  const supabase = createAdminClient();
+
+  const { data } = await supabase
+    .from("token_universe_tokens")
+    .select("address, symbol, decimals");
+
+  const map = new Map<string, { symbol: string; decimals: number }>();
+  if (data) {
+    for (const row of data as Array<{ address: string; symbol: string; decimals: number }>) {
+      map.set(row.address.toLowerCase(), { symbol: row.symbol, decimals: row.decimals });
+    }
+  }
+  return map;
 }
 
 async function getLastPeakValue(

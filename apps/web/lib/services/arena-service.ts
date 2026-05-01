@@ -1,14 +1,14 @@
 import { deriveMatchPhase, type MatchPhase } from "@moonjoy/game";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { getLeaderboardForMatch } from "@/lib/services/leaderboard-service";
-import { getTradeHistoryForMatch } from "@/lib/services/trade-service";
-import { getAllBalances } from "@/lib/services/portfolio-ledger-service";
 import {
   getActiveTokensForMatch,
   type TokenInfo,
 } from "@/lib/services/token-universe-service";
-import { getActiveMatchSnapshotForUser, listOpenChallengesForUser } from "@/lib/services/match-service";
+import { getActiveMatchSnapshotForUser } from "@/lib/services/match-service";
+import { getOpenInviteForUser } from "@/lib/services/invite-service";
 import { listStrategies } from "@/lib/services/agent-bootstrap-service";
+import { buildMatchReadiness } from "@/lib/services/match-readiness-service";
 import { resolveUser } from "@/lib/services/ens-resolution-service";
 import { getFullNameForAddress } from "@/lib/services/ens-service";
 import type { Address } from "viem";
@@ -16,13 +16,16 @@ import type { McpRuntimeContext } from "@/lib/types/mcp";
 import type { StrategyRecord } from "@/lib/types/strategy";
 import type {
   ArenaSnapshot,
-  ArenaReadiness,
   ArenaStrategySummary,
   LiveMatchData,
   PlanningMessage,
+  EnrichedTrade,
+  MandatoryWindowResult,
+  ArenaEventLogEntry,
 } from "@/lib/types/arena";
 import type { MatchView, MatchViewer } from "@/lib/types/match";
 import type { PortfolioView } from "@/lib/types/trading";
+import type { InviteView } from "@/lib/services/invite-service";
 
 export class ArenaServiceError extends Error {
   constructor(message: string, public statusCode: number) {
@@ -84,14 +87,13 @@ export async function getArenaSnapshot(privyUserId: string): Promise<ArenaSnapsh
     agentEnsName = await getFullNameForAddress(agent.smart_account_address as Address);
   }
 
-  const readiness = buildReadiness({
+  const readiness = buildMatchReadiness({
     hasUser: true,
     hasAgent: Boolean(agent),
     hasSmartAccount: Boolean(agent?.smart_account_address),
     hasMcpApproval,
     hasUserEns: Boolean(userEnsName),
     hasAgentEns: Boolean(agentEnsName),
-    hasStrategy: false,
   });
 
   let strategies: ArenaStrategySummary[] = [];
@@ -122,8 +124,6 @@ export async function getArenaSnapshot(privyUserId: string): Promise<ArenaSnapsh
         status: s.status,
         createdAt: s.created_at,
       }));
-      readiness.hasStrategy = strategies.some((s) => s.status === "active");
-      readiness.ready = readiness.hasStrategy && readiness.blockers.length === 0;
     } catch {
       // Strategies may fail if bootstrap is incomplete
     }
@@ -147,12 +147,12 @@ export async function getArenaSnapshot(privyUserId: string): Promise<ArenaSnapsh
     }
   }
 
-  let openChallenges = null;
+  let openInvite: InviteView | null = null;
   if (!activeMatch && agent?.smart_account_address && hasMcpApproval) {
     try {
-      openChallenges = await listOpenChallengesForUser(privyUserId);
+      openInvite = await getOpenInviteForUser(privyUserId);
     } catch {
-      // Challenges may fail
+      // Invite may fail
     }
   }
 
@@ -169,7 +169,7 @@ export async function getArenaSnapshot(privyUserId: string): Promise<ArenaSnapsh
     planning,
     strategies,
     activeMatch,
-    openChallenges,
+    openInvite,
     live,
     generatedAt: new Date().toISOString(),
   };
@@ -250,41 +250,15 @@ function buildUnauthenticatedSnapshot(): ArenaSnapshot {
       hasMcpApproval: false,
       hasUserEns: false,
       hasAgentEns: false,
-      hasStrategy: false,
       ready: false,
       blockers: ["Not authenticated"],
     },
     planning: [],
     strategies: [],
     activeMatch: null,
-    openChallenges: null,
+    openInvite: null,
     live: null,
     generatedAt: new Date().toISOString(),
-  };
-}
-
-function buildReadiness(flags: {
-  hasUser: boolean;
-  hasAgent: boolean;
-  hasSmartAccount: boolean;
-  hasMcpApproval: boolean;
-  hasUserEns: boolean;
-  hasAgentEns: boolean;
-  hasStrategy: boolean;
-}): ArenaReadiness {
-  const blockers: string[] = [];
-  if (!flags.hasUser) blockers.push("Sign in with Privy");
-  if (!flags.hasAgent) blockers.push("Complete onboarding to create agent");
-  if (!flags.hasSmartAccount) blockers.push("Agent smart account is missing");
-  if (!flags.hasMcpApproval) blockers.push("Authorize an MCP client");
-  if (!flags.hasUserEns) blockers.push("Claim your ENS name");
-  if (!flags.hasAgentEns) blockers.push("Agent ENS identity bootstrap required");
-  if (!flags.hasStrategy) blockers.push("Create an active strategy");
-
-  return {
-    ...flags,
-    ready: blockers.length === 0,
-    blockers,
   };
 }
 
@@ -326,6 +300,8 @@ async function buildLiveData(
 ): Promise<LiveMatchData | null> {
   if (!viewerAgentId) return null;
 
+  const supabase = createAdminClient();
+
   let phase: MatchPhase = match.status as MatchPhase;
   let elapsedSeconds = 0;
   let remainingSeconds = 0;
@@ -350,10 +326,12 @@ async function buildLiveData(
     remainingSeconds = Math.max(0, Math.floor((warmupEnd - now) / 1000));
   }
 
-  const [trades, leaderboard, allowedTokens] = await Promise.all([
-    getTradeHistoryForMatch(match.id).catch(() => []),
+  const [enrichedTrades, leaderboard, allowedTokens, windowResults, eventLog] = await Promise.all([
+    loadEnrichedTrades(supabase, match.id),
     getLeaderboardForMatch(match.id).catch(() => []),
     getActiveTokensForMatch(match.id).catch(() => []),
+    loadMandatoryWindowResults(supabase, match.id),
+    loadEventLog(supabase, match.id),
   ]);
 
   const mandatoryWindows = buildMandatoryWindows(match);
@@ -370,7 +348,8 @@ async function buildLiveData(
     elapsedSeconds,
     remainingSeconds,
     mandatoryWindows,
-    trades,
+    mandatoryWindowResults: windowResults,
+    trades: enrichedTrades,
     leaderboard,
     viewerPortfolio,
     opponentPortfolio,
@@ -380,7 +359,108 @@ async function buildLiveData(
       decimals: t.decimals,
       riskTier: t.riskTier,
     })),
+    eventLog,
   };
+}
+
+async function loadEnrichedTrades(
+  supabase: ReturnType<typeof createAdminClient>,
+  matchId: string,
+): Promise<EnrichedTrade[]> {
+  const { data: trades } = await supabase
+    .from("simulated_trades")
+    .select("id, agent_id, seat, phase, token_in, token_out, amount_in, quoted_amount_out, simulated_amount_out, slippage_bps, quote_snapshot_id, status, failure_reason, accepted_at")
+    .eq("match_id", matchId)
+    .order("accepted_at", { ascending: true });
+
+  if (!trades || trades.length === 0) return [];
+
+  const quoteSnapshotIds = trades
+    .map((t) => t.quote_snapshot_id as string)
+    .filter(Boolean);
+
+  let quoteMap: Record<string, Record<string, unknown>> = {};
+  if (quoteSnapshotIds.length > 0) {
+    const { data: quotes } = await supabase
+      .from("quote_snapshots")
+      .select("id, routing, route_summary, gas_estimate, gas_fee_usd, price_impact_bps, fetched_at")
+      .in("id", quoteSnapshotIds);
+    if (quotes) {
+      for (const q of quotes) {
+        quoteMap[q.id as string] = q;
+      }
+    }
+  }
+
+  return trades.map((t) => {
+    const row = t as Record<string, unknown>;
+    const qid = row.quote_snapshot_id as string | null;
+    const quote = qid && quoteMap[qid]
+      ? {
+          routing: quoteMap[qid].routing as string,
+          routeSummary: (quoteMap[qid].route_summary ?? {}) as Record<string, unknown>,
+          gasEstimate: quoteMap[qid].gas_estimate as string | null,
+          gasFeeUsd: quoteMap[qid].gas_fee_usd as number | null,
+          priceImpactBps: quoteMap[qid].price_impact_bps as number | null,
+          fetchedAt: quoteMap[qid].fetched_at as string,
+        }
+      : null;
+    return {
+      id: row.id as string,
+      agentId: row.agent_id as string,
+      seat: row.seat as "creator" | "opponent",
+      phase: row.phase as string,
+      tokenIn: row.token_in as string,
+      tokenOut: row.token_out as string,
+      amountIn: row.amount_in as string,
+      quotedAmountOut: row.quoted_amount_out as string,
+      simulatedAmountOut: row.simulated_amount_out as string,
+      slippageBps: row.slippage_bps as number,
+      status: row.status as "accepted" | "rejected",
+      failureReason: row.failure_reason as string | null,
+      acceptedAt: row.accepted_at as string,
+      quote,
+    };
+  });
+}
+
+async function loadMandatoryWindowResults(
+  supabase: ReturnType<typeof createAdminClient>,
+  matchId: string,
+): Promise<MandatoryWindowResult[]> {
+  const { data } = await supabase
+    .from("mandatory_window_results")
+    .select("window_name, completed, penalty_usd, created_at")
+    .eq("match_id", matchId)
+    .order("created_at", { ascending: true });
+
+  if (!data) return [];
+  return data.map((r) => ({
+    windowName: r.window_name as "opening_window" | "closing_window",
+    completed: Boolean(r.completed),
+    penaltyUsd: Number(r.penalty_usd),
+    assessedAt: r.created_at as string,
+  }));
+}
+
+async function loadEventLog(
+  supabase: ReturnType<typeof createAdminClient>,
+  matchId: string,
+): Promise<ArenaEventLogEntry[]> {
+  const { data } = await supabase
+    .from("match_events")
+    .select("id, event_type, payload, created_at")
+    .eq("match_id", matchId)
+    .order("created_at", { ascending: true })
+    .limit(50);
+
+  if (!data) return [];
+  return data.map((e) => ({
+    id: e.id as string,
+    eventType: e.event_type as string,
+    payload: (e.payload ?? {}) as Record<string, unknown>,
+    createdAt: e.created_at as string,
+  }));
 }
 
 function buildMandatoryWindows(match: MatchView): LiveMatchData["mandatoryWindows"] {
@@ -426,11 +506,20 @@ async function buildPortfolioView(
   }
 
   const v = valSnap as Record<string, unknown>;
-  const balances = await getAllBalances(matchId, agentId);
+  const snapshotBalances = (v.balances ?? []) as Array<{
+    tokenAddress: string;
+    symbol: string;
+    decimals: number;
+    amountBaseUnits: string;
+    valueUsd: number;
+    priceSource: string;
+    quoteId: string | null;
+  }>;
 
   return {
     startingValueUsd: Number(v.starting_value_usd ?? startingCapitalUsd),
     currentValueUsd: Number(v.current_value_usd ?? startingCapitalUsd),
+    usdcBalanceUsd: Number(v.usdc_balance_usd ?? 0),
     realizedPnlUsd: Number(v.realized_pnl_usd ?? 0),
     unrealizedPnlUsd: Number(v.unrealized_pnl_usd ?? 0),
     totalPnlUsd: Number(v.total_pnl_usd ?? 0),
@@ -440,11 +529,11 @@ async function buildPortfolioView(
     netScoreUsd: Number(v.total_pnl_usd ?? 0) - Number(v.penalties_usd ?? 0),
     netScorePercent: Number(v.net_score_percent ?? 0),
     stale: Boolean(v.stale),
-    balances: balances.map((b) => ({
+    balances: snapshotBalances.map((b) => ({
       tokenAddress: b.tokenAddress,
       amountBaseUnits: b.amountBaseUnits,
-      symbol: "",
-      valueUsd: 0,
+      symbol: b.symbol ?? "",
+      valueUsd: b.valueUsd ?? 0,
     })),
   };
 }
