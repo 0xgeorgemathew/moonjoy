@@ -1,6 +1,7 @@
-import type { MatchView, MatchViewer, OpenChallengeSnapshot } from "@/lib/types/match";
+import type { MatchView, MatchViewer } from "@/lib/types/match";
 import type { LeaderboardEntry } from "@/lib/services/leaderboard-service";
 import type { PortfolioView } from "@/lib/types/trading";
+import type { InviteView } from "@/lib/services/invite-service";
 
 export type PlanningMessage = {
   id: string;
@@ -21,7 +22,6 @@ export type ArenaReadiness = {
   hasMcpApproval: boolean;
   hasUserEns: boolean;
   hasAgentEns: boolean;
-  hasStrategy: boolean;
   ready: boolean;
   blockers: string[];
 };
@@ -31,6 +31,44 @@ export type ArenaStrategySummary = {
   name: string;
   sourceType: string;
   status: string;
+  createdAt: string;
+};
+
+export type EnrichedTrade = {
+  id: string;
+  agentId: string;
+  seat: "creator" | "opponent";
+  phase: string;
+  tokenIn: string;
+  tokenOut: string;
+  amountIn: string;
+  quotedAmountOut: string;
+  simulatedAmountOut: string;
+  slippageBps: number;
+  status: "accepted" | "rejected";
+  failureReason: string | null;
+  acceptedAt: string;
+  quote: {
+    routing: string;
+    routeSummary: Record<string, unknown>;
+    gasEstimate: string | null;
+    gasFeeUsd: number | null;
+    priceImpactBps: number | null;
+    fetchedAt: string;
+  } | null;
+};
+
+export type MandatoryWindowResult = {
+  windowName: "opening_window" | "closing_window";
+  completed: boolean;
+  penaltyUsd: number;
+  assessedAt: string;
+};
+
+export type ArenaEventLogEntry = {
+  id: string;
+  eventType: string;
+  payload: Record<string, unknown>;
   createdAt: string;
 };
 
@@ -45,7 +83,8 @@ export type LiveMatchData = {
     endsAt: string;
     completed: boolean;
   }>;
-  trades: Array<Record<string, unknown>>;
+  mandatoryWindowResults: MandatoryWindowResult[];
+  trades: EnrichedTrade[];
   leaderboard: LeaderboardEntry[];
   viewerPortfolio: PortfolioView | null;
   opponentPortfolio: PortfolioView | null;
@@ -55,6 +94,7 @@ export type LiveMatchData = {
     decimals: number;
     riskTier: string;
   }>;
+  eventLog: ArenaEventLogEntry[];
 };
 
 export type ArenaSnapshot = {
@@ -63,7 +103,7 @@ export type ArenaSnapshot = {
   planning: PlanningMessage[];
   strategies: ArenaStrategySummary[];
   activeMatch: MatchView | null;
-  openChallenges: OpenChallengeSnapshot | null;
+  openInvite: InviteView | null;
   live: LiveMatchData | null;
   generatedAt: string;
 };

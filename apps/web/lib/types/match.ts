@@ -83,12 +83,5 @@ export type MatchViewer = {
 export type ActiveMatchSnapshot = {
   viewer: MatchViewer;
   activeMatch: MatchView | null;
-  openChallengeCount: number;
-  generatedAt: string;
-};
-
-export type OpenChallengeSnapshot = {
-  viewer: MatchViewer;
-  challenges: MatchView[];
   generatedAt: string;
 };

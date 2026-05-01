@@ -47,6 +47,7 @@ export type PortfolioBalance = {
 export type PortfolioView = {
   startingValueUsd: number;
   currentValueUsd: number;
+  usdcBalanceUsd: number;
   realizedPnlUsd: number;
   unrealizedPnlUsd: number;
   totalPnlUsd: number;
