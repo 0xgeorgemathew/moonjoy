@@ -1,21 +1,30 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { usePrivy } from "@privy-io/react-auth";
+import { useSearchParams } from "next/navigation";
 import { LandingNav } from "@/components/landing-nav";
 import { LandingCta } from "@/components/landing-cta";
 import { LandingProfile } from "@/components/landing-profile";
 import { LandingSettings } from "@/components/landing-settings";
+import { ArenaPanel } from "@/components/arena-panel";
 import { NetworkToggle } from "@/components/network-toggle";
 import { useUserEnsStatus } from "@/lib/hooks/use-user-ens-status";
 
-type ViewType = "hero" | "profile" | "settings";
+type ViewType = "hero" | "arena" | "profile" | "settings";
 
 export function LandingHeroPanel() {
   const { authenticated } = usePrivy();
+  const searchParams = useSearchParams();
   const [activeView, setActiveView] = useState<ViewType>("hero");
   const { accessToken, ensStatus, loading: ensLoading } =
     useUserEnsStatus(authenticated);
+
+  useEffect(() => {
+    if (searchParams.get("arena") === "1") {
+      setActiveView("arena");
+    }
+  }, [searchParams]);
   const shellViewClass =
     "animate-fade-in-up relative flex min-h-[28rem] min-w-0 flex-1 flex-col overflow-hidden sm:min-h-[32rem] lg:h-full lg:min-h-0";
 
@@ -35,9 +44,15 @@ export function LandingHeroPanel() {
           onSettingsClick={() => setActiveView("settings")}
           onHomeClick={() => setActiveView("hero")}
           onProfileClick={() => setActiveView("profile")}
+          onArenaClick={() => setActiveView("arena")}
         />
 
-        {activeView === "profile" && authenticated ? (
+        {activeView === "arena" && authenticated ? (
+          <div key="arena" className={shellViewClass}>
+            {networkToggle}
+            <ArenaPanel />
+          </div>
+        ) : activeView === "profile" && authenticated ? (
           <div key="profile" className={shellViewClass}>
             {networkToggle}
             <LandingProfile

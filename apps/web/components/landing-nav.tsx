@@ -4,37 +4,11 @@ import Link from "next/link";
 import { usePrivy } from "@privy-io/react-auth";
 import { UserIdentityBlock } from "@/components/user-identity-block";
 
-const navItems = [
-	{
-		label: "HQ",
-		href: "/",
-		icon: (
-			<svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-				<path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z" />
-			</svg>
-		),
-	},
-	{
-		label: "Arena",
-		href: "/match",
-		icon: (
-			<svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-				<circle cx="12" cy="12" r="10" />
-				<circle cx="12" cy="12" r="6" />
-				<circle cx="12" cy="12" r="2" />
-			</svg>
-		),
-	},
-	{
-		label: "Ops",
-		href: "/agents",
-		icon: (
-			<svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-				<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
-			</svg>
-		),
-	},
-];
+const opsIcon = (
+	<svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+		<path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z" />
+	</svg>
+);
 
 const profileIcon = (
 	<svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
@@ -43,9 +17,23 @@ const profileIcon = (
 	</svg>
 );
 
-type ViewType = "hero" | "profile" | "settings";
+const hqIcon = (
+	<svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+		<path d="M21 12.79A9 9 0 1 1 11.21 3a7 7 0 0 0 9.79 9.79z" />
+	</svg>
+);
 
-export function LandingNav({ activeView, ensLoading, ensName, onSettingsClick, onHomeClick, onProfileClick }: { activeView: ViewType; ensLoading: boolean; ensName: string | null; onSettingsClick: () => void; onHomeClick: () => void; onProfileClick: () => void }) {
+const arenaIcon = (
+	<svg viewBox="0 0 24 24" className="h-5 w-5" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+		<circle cx="12" cy="12" r="10" />
+		<circle cx="12" cy="12" r="6" />
+		<circle cx="12" cy="12" r="2" />
+	</svg>
+);
+
+type ViewType = "hero" | "arena" | "profile" | "settings";
+
+export function LandingNav({ activeView, ensLoading, ensName, onSettingsClick, onHomeClick, onProfileClick, onArenaClick }: { activeView: ViewType; ensLoading: boolean; ensName: string | null; onSettingsClick: () => void; onHomeClick: () => void; onProfileClick: () => void; onArenaClick: () => void }) {
 	const { authenticated } = usePrivy();
 
 	const buttonClass = (isActive: boolean) =>
@@ -73,32 +61,39 @@ export function LandingNav({ activeView, ensLoading, ensName, onSettingsClick, o
 					</button>
 				)}
 
-				{navItems.map((item) => (
-					item.label === "HQ" ? (
-						<button
-							key={item.label}
-							type="button"
-							onClick={onHomeClick}
-							className={buttonClass(activeView === "hero")}
-						>
-							{item.icon}
-							<span className="text-[9px] font-label font-semibold uppercase tracking-wider">
-								{item.label}
-							</span>
-						</button>
-					) : (
-						<Link
-							key={item.label}
-							href={item.href}
-							className="flex flex-col items-center gap-1 rounded-lg px-2 py-2.5 text-gray-500 transition-all hover:bg-gray-100 hover:text-black"
-						>
-							{item.icon}
-							<span className="text-[9px] font-label font-semibold uppercase tracking-wider">
-								{item.label}
-							</span>
-						</Link>
-					)
-				))}
+				<button
+					type="button"
+					onClick={onHomeClick}
+					className={buttonClass(activeView === "hero")}
+				>
+					{hqIcon}
+					<span className="text-[9px] font-label font-semibold uppercase tracking-wider">
+						HQ
+					</span>
+				</button>
+
+				{authenticated && (
+					<button
+						type="button"
+						onClick={onArenaClick}
+						className={buttonClass(activeView === "arena")}
+					>
+						{arenaIcon}
+						<span className="text-[9px] font-label font-semibold uppercase tracking-wider">
+							Arena
+						</span>
+					</button>
+				)}
+
+				<Link
+					href="/agents"
+					className="flex flex-col items-center gap-1 rounded-lg px-2 py-2.5 text-gray-500 transition-all hover:bg-gray-100 hover:text-black"
+				>
+					{opsIcon}
+					<span className="text-[9px] font-label font-semibold uppercase tracking-wider">
+						Ops
+					</span>
+				</Link>
 			</nav>
 
 			{authenticated && (

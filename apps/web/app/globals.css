@@ -992,21 +992,32 @@ body {
 	0%,
 	100% {
 		opacity: 1;
+		text-shadow: 0 0 12px rgba(248, 113, 113, 0.5);
 	}
 	50% {
 		opacity: 0.5;
+		text-shadow: 0 0 4px rgba(248, 113, 113, 0.2);
 	}
 }
 
 @keyframes trade-enter {
 	from {
 		opacity: 0;
-		transform: translateY(8px);
+		transform: translateY(12px) scale(0.98);
+	}
+	60% {
+		opacity: 1;
+		transform: translateY(-2px) scale(1.005);
 	}
 	to {
 		opacity: 1;
-		transform: translateY(0);
+		transform: translateY(0) scale(1);
 	}
+}
+
+@keyframes trade-flash {
+	0% { background-color: rgb(229 57 53 / 0.15); }
+	100% { background-color: transparent; }
 }
 
 .arena-timer-urgent {
@@ -1014,32 +1025,38 @@ body {
 }
 
 .arena-trade-enter {
-	animation: trade-enter 0.35s ease-out forwards;
+	animation: trade-enter 0.45s ease-out forwards;
+}
+
+.arena-trade-flash {
+	animation: trade-flash 1.5s ease-out forwards;
 }
 
 .arena-role-badge {
-	border-radius: 4px;
-	padding: 1px 5px;
+	border-radius: 8px;
+	padding: 4px 12px;
 	font-family: var(--font-label), sans-serif;
-	font-size: 8px;
-	font-weight: 600;
+	font-size: 14px;
+	font-weight: 700;
 	text-transform: uppercase;
-	letter-spacing: 0.15em;
-	line-height: 1.6;
+	letter-spacing: 0.12em;
+	line-height: 1.4;
 }
 
 .arena-role-badge-creator {
 	background: var(--primary-container);
 	color: var(--primary);
+	border: 1px solid rgb(229 57 53 / 0.25);
 }
 
 .arena-role-badge-opponent {
 	background: var(--surface-variant);
 	color: var(--on-surface-variant);
+	border: 1px solid var(--outline-variant);
 }
 
 .arena-spread-bar {
-	height: 6px;
+	height: 8px;
 	border-radius: 9999px;
 	background: var(--surface-variant);
 	overflow: hidden;
@@ -1048,9 +1065,9 @@ body {
 
 .arena-spread-fill {
 	height: 100%;
-	background: var(--primary);
+	background: linear-gradient(90deg, var(--primary), var(--artemis-red-light));
 	border-radius: 9999px;
-	transition: width 0.5s ease-out;
+	transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
 .arena-spread-fill-from-right {
@@ -1058,8 +1075,8 @@ body {
 }
 
 .arena-status-dot {
-	width: 6px;
-	height: 6px;
+	width: 10px;
+	height: 10px;
 	border-radius: 50%;
 	flex-shrink: 0;
 }
@@ -1067,6 +1084,7 @@ body {
 .arena-status-dot-connected {
 	background: var(--primary);
 	animation: pulse-dot 2s ease-in-out infinite;
+	box-shadow: 0 0 6px 2px rgba(229 57 53 / 0.3);
 }
 
 .arena-status-dot-disconnected {
