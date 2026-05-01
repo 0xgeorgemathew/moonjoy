@@ -29,6 +29,7 @@ export type LeaderboardRow = {
   seat: "creator" | "opponent";
   startingValueUsd: number;
   currentValueUsd: number;
+  usdcBalanceUsd: number;
   realizedPnlUsd: number;
   unrealizedPnlUsd: number;
   totalPnlUsd: number;
@@ -141,23 +142,26 @@ export function selectMatchWinner(
   creator: LeaderboardRow,
   opponent: LeaderboardRow,
 ): WinnerSelection {
-  if (creator.netScorePercent > opponent.netScorePercent) {
+  const creatorUsdc = creator.usdcBalanceUsd - creator.penaltiesUsd;
+  const opponentUsdc = opponent.usdcBalanceUsd - opponent.penaltiesUsd;
+
+  if (creatorUsdc > opponentUsdc) {
     return {
       winnerAgentId: creator.agentId,
       winnerSeat: creator.seat,
       outcome: "winner",
-      spreadUsd: Math.abs(creator.netScoreUsd - opponent.netScoreUsd),
-      spreadPnlPercent: Math.abs(creator.netScorePercent - opponent.netScorePercent),
+      spreadUsd: Math.abs(creatorUsdc - opponentUsdc),
+      spreadPnlPercent: Math.abs((creatorUsdc - opponentUsdc) / creator.startingValueUsd),
     };
   }
 
-  if (opponent.netScorePercent > creator.netScorePercent) {
+  if (opponentUsdc > creatorUsdc) {
     return {
       winnerAgentId: opponent.agentId,
       winnerSeat: opponent.seat,
       outcome: "winner",
-      spreadUsd: Math.abs(creator.netScoreUsd - opponent.netScoreUsd),
-      spreadPnlPercent: Math.abs(creator.netScorePercent - opponent.netScorePercent),
+      spreadUsd: Math.abs(creatorUsdc - opponentUsdc),
+      spreadPnlPercent: Math.abs((creatorUsdc - opponentUsdc) / opponent.startingValueUsd),
     };
   }
 
@@ -177,26 +181,6 @@ export function selectMatchWinner(
       winnerSeat: opponent.seat,
       outcome: "winner",
       spreadUsd: Math.abs(creator.realizedPnlUsd - opponent.realizedPnlUsd),
-      spreadPnlPercent: 0,
-    };
-  }
-
-  if (creator.maxDrawdownPercent < opponent.maxDrawdownPercent) {
-    return {
-      winnerAgentId: creator.agentId,
-      winnerSeat: creator.seat,
-      outcome: "winner",
-      spreadUsd: 0,
-      spreadPnlPercent: 0,
-    };
-  }
-
-  if (opponent.maxDrawdownPercent < creator.maxDrawdownPercent) {
-    return {
-      winnerAgentId: opponent.agentId,
-      winnerSeat: opponent.seat,
-      outcome: "winner",
-      spreadUsd: 0,
       spreadPnlPercent: 0,
     };
   }
@@ -221,43 +205,6 @@ export function selectMatchWinner(
     };
   }
 
-  if (creator.lastProfitableTradeAt && opponent.lastProfitableTradeAt) {
-    if (creator.lastProfitableTradeAt < opponent.lastProfitableTradeAt) {
-      return {
-        winnerAgentId: creator.agentId,
-        winnerSeat: creator.seat,
-        outcome: "winner",
-        spreadUsd: 0,
-        spreadPnlPercent: 0,
-      };
-    }
-    if (opponent.lastProfitableTradeAt < creator.lastProfitableTradeAt) {
-      return {
-        winnerAgentId: opponent.agentId,
-        winnerSeat: opponent.seat,
-        outcome: "winner",
-        spreadUsd: 0,
-        spreadPnlPercent: 0,
-      };
-    }
-  } else if (creator.lastProfitableTradeAt && !opponent.lastProfitableTradeAt) {
-    return {
-      winnerAgentId: creator.agentId,
-      winnerSeat: creator.seat,
-      outcome: "winner",
-      spreadUsd: 0,
-      spreadPnlPercent: 0,
-    };
-  } else if (!creator.lastProfitableTradeAt && opponent.lastProfitableTradeAt) {
-    return {
-      winnerAgentId: opponent.agentId,
-      winnerSeat: opponent.seat,
-      outcome: "winner",
-      spreadUsd: 0,
-      spreadPnlPercent: 0,
-    };
-  }
-
   return {
     winnerAgentId: null,
     winnerSeat: null,
@@ -269,9 +216,10 @@ export function selectMatchWinner(
 
 export function rankLeaderboard(rows: LeaderboardRow[]): LeaderboardRow[] {
   return [...rows].sort((a, b) => {
-    if (b.netScorePercent !== a.netScorePercent) return b.netScorePercent - a.netScorePercent;
+    const aNet = a.usdcBalanceUsd - a.penaltiesUsd;
+    const bNet = b.usdcBalanceUsd - b.penaltiesUsd;
+    if (bNet !== aNet) return bNet - aNet;
     if (b.realizedPnlUsd !== a.realizedPnlUsd) return b.realizedPnlUsd - a.realizedPnlUsd;
-    if (a.maxDrawdownPercent !== b.maxDrawdownPercent) return a.maxDrawdownPercent - b.maxDrawdownPercent;
     if (a.failedTradeCount !== b.failedTradeCount) return a.failedTradeCount - b.failedTradeCount;
     return 0;
   });

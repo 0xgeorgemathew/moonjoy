@@ -14,6 +14,26 @@ export type MatchStatus =
 
 export type MatchSeat = "creator" | "opponent";
 
+export type InviteStatus = "open" | "joined" | "revoked" | "expired";
+
+export type InviteScopeType = "open" | "ens";
+
+export type MatchInvite = {
+  id: string;
+  createdByUserId: string;
+  creatorAgentId: string;
+  inviteToken: string;
+  scopeType: InviteScopeType;
+  scopedEnsName: string | null;
+  wagerUsd: number;
+  durationSeconds: number;
+  warmupSeconds: number;
+  status: InviteStatus;
+  createdMatchId: string | null;
+  createdAt: Date;
+  expiresAt: Date | null;
+};
+
 export type MatchParticipant = {
   userId: string;
   agentId: string;
@@ -82,7 +102,7 @@ export function acceptChallenge(
   },
 ): MatchState {
   if (match.status !== "created") {
-    throw new Error("Only created matches can accept a challenger.");
+    throw new Error("Only created matches can accept an opponent.");
   }
 
   if (match.opponent) {
@@ -90,7 +110,7 @@ export function acceptChallenge(
   }
 
   if (params.opponent.agentId === match.creator.agentId) {
-    throw new Error("Creator cannot accept their own challenge.");
+    throw new Error("Creator cannot accept their own match.");
   }
 
   return startWarmup(
@@ -284,6 +304,79 @@ export function isSettlementGraceExpired(now: Date, match: MatchState): boolean 
     match.config.settlementGraceSeconds * 1000;
 
   return now.getTime() > graceEndsAt;
+}
+
+export function createInvite(params: {
+  id: string;
+  createdByUserId: string;
+  creatorAgentId: string;
+  inviteToken: string;
+  scopeType: InviteScopeType;
+  scopedEnsName?: string;
+  wagerUsd?: number;
+  durationSeconds?: number;
+  warmupSeconds?: number;
+  expiresAt?: Date;
+}): MatchInvite {
+  return {
+    id: params.id,
+    createdByUserId: params.createdByUserId,
+    creatorAgentId: params.creatorAgentId,
+    inviteToken: params.inviteToken,
+    scopeType: params.scopeType,
+    scopedEnsName: params.scopedEnsName ?? null,
+    wagerUsd: params.wagerUsd ?? DEFAULT_MATCH_WAGER_USD,
+    durationSeconds: params.durationSeconds ?? DEFAULT_MATCH_DURATION_SECONDS,
+    warmupSeconds: params.warmupSeconds ?? DEFAULT_WARMUP_SECONDS,
+    status: "open",
+    createdMatchId: null,
+    createdAt: new Date(),
+    expiresAt: params.expiresAt ?? null,
+  };
+}
+
+export function isInviteExpired(invite: MatchInvite, now: Date): boolean {
+  if (!invite.expiresAt) return false;
+  return now.getTime() >= invite.expiresAt.getTime();
+}
+
+export function canJoinInvite(invite: MatchInvite, now: Date): boolean {
+  if (invite.status !== "open") return false;
+  if (isInviteExpired(invite, now)) return false;
+  return true;
+}
+
+export function joinInvite(invite: MatchInvite, now: Date): MatchInvite {
+  if (!canJoinInvite(invite, now)) {
+    throw new Error(`Invite cannot be joined: status=${invite.status}`);
+  }
+
+  return {
+    ...invite,
+    status: "joined",
+  };
+}
+
+export function revokeInvite(invite: MatchInvite): MatchInvite {
+  if (invite.status !== "open") {
+    throw new Error(`Only open invites can be revoked: status=${invite.status}`);
+  }
+
+  return {
+    ...invite,
+    status: "revoked",
+  };
+}
+
+export function expireInvite(invite: MatchInvite): MatchInvite {
+  if (invite.status !== "open") {
+    throw new Error(`Only open invites can be expired: status=${invite.status}`);
+  }
+
+  return {
+    ...invite,
+    status: "expired",
+  };
 }
 
 function buildMatchConfig(overrides?: Partial<MatchConfig>): MatchConfig {

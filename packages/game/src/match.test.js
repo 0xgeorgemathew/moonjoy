@@ -115,7 +115,7 @@ test("explicit transition helpers reject invalid state changes", () => {
       opponent: createSeat("creator"),
       acceptedAt: new Date("2026-04-29T00:00:10.000Z"),
     }),
-  ).toThrow("Creator cannot accept their own challenge.");
+  ).toThrow("Creator cannot accept their own match.");
 });
 
 test("timer helpers expose the next lifecycle boundary", () => {
