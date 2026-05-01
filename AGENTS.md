@@ -32,8 +32,6 @@ Moonjoy is a wagered PvP agent trading game.
 - The first demo wager is $10.
 - The wager is separate from each user's trading capital.
 - Users fund the agent smart account, and the agent deploys trading capital from that account.
-- User ENS `moonjoy:match_preference` may publish automatch defaults: match duration, bet amount, and preferred trading-capital range.
-- Challenge links may carry explicit settings for a specific opponent and override automatch preferences for that match.
 - Onchain state is canonical wherever it exists. Resolve ENS names, ENS records, balances, ownership, escrow deposits, escrow settlement, and transaction status from chain.
 - Do not duplicate onchain state in Supabase as canonical product state. Supabase may store app workflow state, offchain simulation data, replay snapshots, and receipt hashes only after verification.
 - Highest normalized PnL wins.
@@ -41,6 +39,17 @@ Moonjoy is a wagered PvP agent trading game.
 - Real swap execution is out of scope for the first demo.
 - Live Uniswap quote data and deterministic simulated execution are in scope.
 - The wager should move toward an escrow contract after the offchain game loop is stable.
+
+### Humans Decide Who Plays. Agents Decide How To Trade.
+
+- Humans create and accept match invites through the web app.
+- Invite types: open (any eligible authenticated human can join) or ens (only the holder/resolved controller of a specific ENS name can join).
+- Invite terms live server-side. The shareable link carries an opaque invite token, not trusted state.
+- Match starts only after both humans have joined. Agent autonomy starts after the human creates or joins a match.
+- Agents must never create challenges, browse open challenges, accept opponents, or decide matchmaking.
+- The agent's job is: inspect assigned match, inspect allowed capital, discover market opportunities, prepare strategy, mark ready during warm-up, submit quote-backed simulated trades during live play, record rationale.
+- Dexscreener is the agent's market radar. Uniswap is the execution truth.
+- For ENS-scoped invites, resolve through Durin at join time. Do not trust query params, cached ENS values, Supabase ENS mirrors, or client-submitted wallet addresses.
 
 ## User, Agent, And Strategy Model
 
@@ -67,7 +76,7 @@ Moonjoy is a wagered PvP agent trading game.
 - `agent-buzz.moonjoy.eth` resolves to the agent smart account address.
 - Agent ENS records must do real product work: address resolution, ownership, MCP endpoint discovery, strategy provenance, and public match history pointers.
 - Resolve agent ENS identity and text records from Durin when gating match readiness or displaying public identity.
-- Match creation requires an authenticated user, a user ENS identity, an approved live agent identity, and a funded agent smart account.
+- Match creation requires an authenticated user, a user ENS identity, an approved live agent identity, and a funded agent smart account. Humans create invites through the web app; agents never create, discover, accept, or cancel invites.
 - The agent smart account is created during user signup before MCP authorization.
 - Agent authorization happens through Moonjoy MCP auth after the user has an agent smart account and user ENS identity. MCP approval lets an external client operate through Moonjoy tools; it does not provision wallets.
 - Agent ENS minting or claiming is an explicit post-MCP agent action, not a hidden authorization side effect.
@@ -83,6 +92,9 @@ Uniswap is the primary trading partner track.
 - Use the agent smart account address as the Uniswap swapper address once real execution is enabled.
 - Store quote request and response metadata for every simulated fill.
 - Show route, routing type, token pair, amounts, gas estimate, and timestamp in the UI.
+- Dexscreener is the agent's market radar for token discovery. Uniswap is the execution truth for trade validation.
+- Agents discover tokens through Dexscreener MCP tools. Moonjoy validates only trade eligibility through Uniswap quotes.
+- Return risk warnings on Dexscreener candidates rather than silently filtering. Only no Uniswap quote or not Base should block trade admission.
 - Add `FEEDBACK.md` at the repo root before submission.
 
 ### ENS
@@ -168,9 +180,9 @@ Build in this order unless the user explicitly redirects:
 3. MCP authorization for external agent clients and Moonjoy skill/context setup.
 4. Agent-owned ENS identity and default strategy bootstrap through approved Moonjoy tools.
 5. Agent funding display, withdrawal entry points, and match readiness checks that read current chain balances for wager funds and trading capital.
-6. Match constants and warm-up lifecycle in `packages/game`.
-7. Match create, join, warm-up, live, settle flow.
-8. Uniswap quote-backed simulated trades.
+6. Match constants, invite status rules, and warm-up lifecycle in `packages/game`.
+7. Human invite creation (open and ENS-scoped), invite join flow, warm-up, live, settle flow.
+8. Dexscreener market discovery MCP tools and Uniswap quote-backed simulated trades.
 9. Portfolio scoring and match replay.
 10. Wager escrow contract funded by agent smart accounts.
 11. KeeperHub strategy workflows.
@@ -196,7 +208,7 @@ Build in this order unless the user explicitly redirects:
 <claude-mem-context>
 # Memory Context
 
-# [moonjoy] recent context, 2026-04-29 8:44am GMT+5:30
+# [moonjoy] recent context, 2026-05-01 7:23am GMT+5:30
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE

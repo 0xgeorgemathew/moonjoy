@@ -7,12 +7,17 @@ Moon Joy is organized as a small Bun monorepo optimized for fast hackathon itera
 ```txt
 apps/web
   Next.js app, browser UI, API routes, Privy flows, MCP HTTP endpoint, and web-owned services.
+  Human invite creation and join flow.
+  Scoped ENS invite validation.
+  MCP endpoint for assigned agent execution (not matchmaking).
+  Dexscreener and Uniswap service adapters.
 
 apps/worker
-  Future background runtime for timers, polling, cleanup, execution monitoring, and settlement.
+  Future background runtime for invite expiry, timers, polling, cleanup, execution monitoring, and settlement.
 
 packages/game
   Pure TypeScript game rules shared by web, worker, tests, and future contract-facing code.
+  Includes invite/match status rules where possible.
 
 packages/db
   Future shared Supabase types and thin database helpers once web and worker both need them.
