@@ -1,24 +1,20 @@
 export type RiskTier = "blue_chip" | "pink_slip" | "discovered";
 
 export type TokenRiskPolicy = {
-  maxPositionPercent: number;
   maxPriceImpactBps: number;
   slippageBps: number;
 };
 
 export const RISK_POLICIES: Record<RiskTier, TokenRiskPolicy> = {
   blue_chip: {
-    maxPositionPercent: 80,
     maxPriceImpactBps: 200,
     slippageBps: 50,
   },
   pink_slip: {
-    maxPositionPercent: 25,
     maxPriceImpactBps: 500,
     slippageBps: 100,
   },
   discovered: {
-    maxPositionPercent: 15,
     maxPriceImpactBps: 800,
     slippageBps: 150,
   },
@@ -35,9 +31,6 @@ export type TokenDefinition = {
   decimals: number;
   riskTier: RiskTier;
 };
-
-export const MIN_TRADE_USD = 1;
-export const MAX_TRADE_PORTFOLIO_PERCENT = 50;
 
 export const DISCOVERY_DEFAULTS = {
   minLiquidityUsd: 50_000,
@@ -73,21 +66,4 @@ export function isTokenInAllowlist(
 ): boolean {
   const normalized = tokenAddress.toLowerCase();
   return allowlistAddresses.some((address) => address.toLowerCase() === normalized);
-}
-
-export function isWithinExposureCap(input: {
-  currentExposureUsd: number;
-  tradeValueUsd: number;
-  portfolioValueUsd: number;
-  maxPositionPercent: number;
-  increasesExposure: boolean;
-}): boolean {
-  if (!input.increasesExposure) return true;
-  if (input.portfolioValueUsd <= 0) {
-    throw new Error("Portfolio value must be greater than zero.");
-  }
-
-  const nextExposureUsd = input.currentExposureUsd + input.tradeValueUsd;
-  const exposurePercent = (nextExposureUsd / input.portfolioValueUsd) * 100;
-  return exposurePercent <= input.maxPositionPercent;
 }

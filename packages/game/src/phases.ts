@@ -1,4 +1,4 @@
-export type LiveSubphase = "opening_window" | "midgame" | "closing_window";
+export type LiveSubphase = "opening_window" | "midgame" | "cycle_out";
 
 export type MandatoryWindowName = "opening_window" | "closing_window";
 
@@ -7,7 +7,7 @@ export type MatchPhase =
   | "warmup"
   | "opening_window"
   | "midgame"
-  | "closing_window"
+  | "cycle_out"
   | "settling"
   | "settled"
   | "canceled";
@@ -41,7 +41,7 @@ export function deriveLiveSubphase(
   }
 
   if (elapsedMs >= closingStartMs) {
-    return "closing_window";
+    return "cycle_out";
   }
 
   return "midgame";
@@ -101,7 +101,7 @@ export function isTradingAllowed(phase: MatchPhase): boolean {
   return (
     phase === "opening_window" ||
     phase === "midgame" ||
-    phase === "closing_window"
+    phase === "cycle_out"
   );
 }
 

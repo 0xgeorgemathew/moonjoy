@@ -3,7 +3,6 @@ import {
   closeLotsFifo,
   computePnlBreakdown,
   isTokenInAllowlist,
-  isWithinExposureCap,
   mapViewerSeats,
   selectMatchWinner,
   type LeaderboardRow,
@@ -80,24 +79,6 @@ test("winner uses net PnL percent instead of raw PnL percent", () => {
   expect(result.winnerAgentId).toBe("opponent-agent");
 });
 
-test("repeated buys cannot exceed exposure cap", () => {
-  expect(isWithinExposureCap({
-    currentExposureUsd: 20,
-    tradeValueUsd: 4.99,
-    portfolioValueUsd: 100,
-    maxPositionPercent: 25,
-    increasesExposure: true,
-  })).toBe(true);
-
-  expect(isWithinExposureCap({
-    currentExposureUsd: 20,
-    tradeValueUsd: 5.01,
-    portfolioValueUsd: 100,
-    maxPositionPercent: 25,
-    increasesExposure: true,
-  })).toBe(false);
-});
-
 test("sell path closes lots FIFO and reduces exposure", () => {
   const result = closeLotsFifo(
     [
@@ -111,11 +92,4 @@ test("sell path closes lots FIFO and reduces exposure", () => {
   expect(result.remainingLots).toEqual([
     { tokenAddress: "0xabc", quantityBaseUnits: "50", costBasisUsd: 10, acquiredAt: new Date("2026-01-02") },
   ]);
-  expect(isWithinExposureCap({
-    currentExposureUsd: 25,
-    tradeValueUsd: 10,
-    portfolioValueUsd: 100,
-    maxPositionPercent: 25,
-    increasesExposure: false,
-  })).toBe(true);
 });

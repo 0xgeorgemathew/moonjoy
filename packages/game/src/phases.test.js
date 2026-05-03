@@ -22,15 +22,15 @@ test("deriveLiveSubphase returns midgame between windows", () => {
   expect(deriveLiveSubphase(T0, LIVE_END, new Date("2026-04-29T00:04:34.000Z"))).toBe("midgame");
 });
 
-test("deriveLiveSubphase returns closing_window in final 60s", () => {
-  expect(deriveLiveSubphase(T0, LIVE_END, new Date("2026-04-29T00:04:35.000Z"))).toBe("closing_window");
-  expect(deriveLiveSubphase(T0, LIVE_END, LIVE_END)).toBe("closing_window");
+test("deriveLiveSubphase returns cycle_out in final 60s", () => {
+  expect(deriveLiveSubphase(T0, LIVE_END, new Date("2026-04-29T00:04:35.000Z"))).toBe("cycle_out");
+  expect(deriveLiveSubphase(T0, LIVE_END, LIVE_END)).toBe("cycle_out");
 });
 
 test("deriveMatchPhase delegates to live subphase for live status", () => {
   expect(deriveMatchPhase("live", T0, LIVE_END, new Date("2026-04-29T00:00:50.000Z"))).toBe("opening_window");
   expect(deriveMatchPhase("live", T0, LIVE_END, new Date("2026-04-29T00:02:00.000Z"))).toBe("midgame");
-  expect(deriveMatchPhase("live", T0, LIVE_END, new Date("2026-04-29T00:05:00.000Z"))).toBe("closing_window");
+  expect(deriveMatchPhase("live", T0, LIVE_END, new Date("2026-04-29T00:05:00.000Z"))).toBe("cycle_out");
 });
 
 test("deriveMatchPhase passes through non-live statuses", () => {
@@ -44,7 +44,7 @@ test("deriveMatchPhase passes through non-live statuses", () => {
 test("isTradingAllowed only allows live subphases", () => {
   expect(isTradingAllowed("opening_window")).toBe(true);
   expect(isTradingAllowed("midgame")).toBe(true);
-  expect(isTradingAllowed("closing_window")).toBe(true);
+  expect(isTradingAllowed("cycle_out")).toBe(true);
   expect(isTradingAllowed("created")).toBe(false);
   expect(isTradingAllowed("warmup")).toBe(false);
   expect(isTradingAllowed("settling")).toBe(false);
