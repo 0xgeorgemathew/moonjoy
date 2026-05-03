@@ -263,6 +263,28 @@ export function EnsSetupStatus({
                 )}
               </div>
             )}
+
+            {(ensStatus?.activeStrategies.public || ensStatus?.activeStrategies.secretSauce) && (
+              <div className="mt-4 border-t-2 border-dashed border-black/10 pt-3">
+                <p className="font-label text-[9px] font-bold uppercase tracking-widest text-artemis-silver">
+                  Active Strategy
+                </p>
+                <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                  <StrategyStatusCard
+                    label="Public"
+                    name={ensStatus.activeStrategies.public?.name ?? "None"}
+                    detail={ensStatus.activeStrategies.public ? "Readable from ENS + 0G." : "No active public strategy."}
+                    tone="blue"
+                  />
+                  <StrategyStatusCard
+                    label="Secret Sauce"
+                    name={ensStatus.activeStrategies.secretSauce?.name ?? "None"}
+                    detail={ensStatus.activeStrategies.secretSauce ? "Encrypted at rest. MCP-only read path." : "No active secret strategy."}
+                    tone="red"
+                  />
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
@@ -356,6 +378,35 @@ function AgentStatTile({ label, value }: { label: string; value: string }) {
       <p className="mt-1 font-label text-[8px] font-bold uppercase tracking-widest text-artemis-silver">
         {label}
       </p>
+    </div>
+  );
+}
+
+function StrategyStatusCard({
+  label,
+  name,
+  detail,
+  tone,
+}: {
+  label: string;
+  name: string;
+  detail: string;
+  tone: "blue" | "red";
+}) {
+  const shadow =
+    tone === "red"
+      ? "shadow-[3px_3px_0_0_var(--artemis-red)]"
+      : "shadow-[3px_3px_0_0_var(--artemis-blue)]";
+
+  return (
+    <div className={`rounded-xl border-2 border-black bg-white px-3 py-3 ${shadow}`}>
+      <p className="font-label text-[9px] font-bold uppercase tracking-widest text-artemis-silver">
+        {label}
+      </p>
+      <p className="mt-1 font-display text-sm font-black uppercase tracking-tight text-black">
+        {name}
+      </p>
+      <p className="mt-1 font-body text-[11px] text-gray-500">{detail}</p>
     </div>
   );
 }

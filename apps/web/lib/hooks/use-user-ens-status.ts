@@ -20,6 +20,24 @@ export interface UserEnsStatus {
     source: "ens" | "database";
     syncing: boolean;
   } | null;
+  activeStrategies: {
+    public: {
+      id: string;
+      name: string;
+      strategy_kind: "public";
+      status: string;
+      manifest_pointer: string;
+      updated_at: string;
+    } | null;
+    secretSauce: {
+      id: string;
+      name: string;
+      strategy_kind: "secret_sauce";
+      status: string;
+      manifest_pointer: string;
+      updated_at: string;
+    } | null;
+  };
   textRecords: { record_key: string; record_value: string }[];
 }
 

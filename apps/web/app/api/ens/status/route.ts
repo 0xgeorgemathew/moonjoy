@@ -68,6 +68,14 @@ export async function GET(request: Request) {
       ? await getPendingAgentBootstrapTransaction(supabase, agent.id)
       : null;
 
+  const { data: activeStrategies } = agent?.id
+    ? await supabase
+        .from("strategies")
+        .select("id, name, strategy_kind, status, manifest_pointer, updated_at")
+        .eq("agent_id", agent.id)
+        .eq("status", "active")
+    : { data: [] as Array<Record<string, unknown>> };
+
   const textRecords: { record_key: string; record_value: string }[] = [];
   if (userEnsName) {
     const label = extractEnsLabel(userEnsName);
@@ -99,6 +107,12 @@ export async function GET(request: Request) {
     }),
     pendingAgentTransaction,
     agentStats,
+    activeStrategies: {
+      public:
+        (activeStrategies ?? []).find((strategy) => strategy.strategy_kind === "public") ?? null,
+      secretSauce:
+        (activeStrategies ?? []).find((strategy) => strategy.strategy_kind === "secret_sauce") ?? null,
+    },
     textRecords,
   });
 }
