@@ -141,10 +141,6 @@ export function getTokenRiskTier(
   return token?.riskTier ?? null;
 }
 
-export function getPositionLimitPercent(riskTier: RiskTier): number {
-  return RISK_POLICIES[riskTier].maxPositionPercent;
-}
-
 export function getMaxPriceImpactBps(riskTier: RiskTier): number {
   return RISK_POLICIES[riskTier].maxPriceImpactBps;
 }

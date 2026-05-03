@@ -32,6 +32,8 @@ const INVITE_EXPIRES_IN_MS = 24 * 60 * 60 * 1000;
 const SUPPORTED_WAGER_USD = [DEFAULT_MATCH_WAGER_USD] as const;
 const SUPPORTED_DURATION_SECONDS = [180, DEFAULT_MATCH_DURATION_SECONDS, 600] as const;
 const SUPPORTED_STARTING_CAPITAL_USD = [DEFAULT_STARTING_USDC, 250, 500] as const;
+const MIN_STARTING_CAPITAL_USD = 1;
+const MAX_STARTING_CAPITAL_USD = 1_000_000;
 const SUPPORTED_WARMUP_SECONDS = [DEFAULT_WARMUP_SECONDS] as const;
 
 export type CreateInviteInput = {
@@ -522,7 +524,7 @@ function validateCreateInviteInput(input: CreateInviteInput): ValidatedCreateInv
     : requireSupportedNumber(input.durationSeconds, SUPPORTED_DURATION_SECONDS, "durationSeconds");
   const startingCapitalUsd = input.startingCapitalUsd === undefined
     ? DEFAULT_STARTING_USDC
-    : requireSupportedNumber(input.startingCapitalUsd, SUPPORTED_STARTING_CAPITAL_USD, "startingCapitalUsd");
+    : requireStartingCapitalUsd(input.startingCapitalUsd);
   const warmupSeconds = input.warmupSeconds === undefined
     ? DEFAULT_WARMUP_SECONDS
     : requireSupportedNumber(input.warmupSeconds, SUPPORTED_WARMUP_SECONDS, "warmupSeconds");
@@ -535,6 +537,25 @@ function validateCreateInviteInput(input: CreateInviteInput): ValidatedCreateInv
     startingCapitalUsd,
     warmupSeconds,
   };
+}
+
+function requireStartingCapitalUsd(value: number | undefined): number {
+  if (typeof value !== "number" || !Number.isFinite(value)) {
+    throw new InviteServiceError("startingCapitalUsd is required.", 400);
+  }
+
+  if (!Number.isInteger(value)) {
+    throw new InviteServiceError("startingCapitalUsd must be a whole dollar amount.", 400);
+  }
+
+  if (value < MIN_STARTING_CAPITAL_USD || value > MAX_STARTING_CAPITAL_USD) {
+    throw new InviteServiceError(
+      `startingCapitalUsd must be between ${MIN_STARTING_CAPITAL_USD} and ${MAX_STARTING_CAPITAL_USD}.`,
+      400,
+    );
+  }
+
+  return value;
 }
 
 function requireSupportedNumber(

@@ -109,6 +109,11 @@ export type ArenaSnapshot = {
   planning: PlanningMessage[];
   strategies: ArenaStrategySummary[];
   activeMatch: MatchView | null;
+  recentSettledMatch: MatchView | null;
+  recentSettledPortfolios: {
+    creator: PortfolioView | null;
+    opponent: PortfolioView | null;
+  } | null;
   openInvite: InviteView | null;
   live: LiveMatchData | null;
   generatedAt: string;

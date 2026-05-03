@@ -1,12 +1,8 @@
 import { computePnlBreakdown, computeMaxDrawdownPercent } from "@moonjoy/game";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchValuationQuote } from "@/lib/services/uniswap-quote-service";
-import {
-  getOpenPositions,
-  getTotalRealizedPnl as getLotRealizedPnl,
-} from "@/lib/services/lot-service";
 
-const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
+const USDC_ADDRESS = "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913";
 const ZERO = BigInt(0);
 
 export type LedgerBalance = {
@@ -85,8 +81,17 @@ export async function initializeStartingBalances(
   });
 
   if (error && error.code !== "23505") {
+    console.error(`[portfolio-ledger] initializeStartingBalances INSERT FAILED`, {
+      matchId,
+      agentId,
+      startingCapitalUsd,
+      errorCode: error.code,
+      errorMessage: error.message,
+      errorDetails: error.details,
+    });
     throw new Error(`Failed to initialize starting balance: ${error.message}`);
   }
+  console.log(`[portfolio-ledger] initializeStartingBalances OK`, { matchId, agentId, startingCapitalUsd, usdcUnits: usdcUnits.toString() });
 }
 
 export async function getTokenBalance(
@@ -227,13 +232,17 @@ export async function applyPenaltyLedger(
   windowName: string,
 ): Promise<void> {
   const supabase = createAdminClient();
-  await supabase.from("portfolio_ledger_entries").insert({
+  const { error } = await supabase.from("portfolio_ledger_entries").insert({
     match_id: matchId,
     agent_id: agentId,
     entry_type: "penalty",
     value_usd: penaltyUsd,
     metadata: { windowName },
   });
+
+  if (error && error.code !== "23505") {
+    throw new Error(`Failed to apply penalty ledger entry: ${error.message}`);
+  }
 }
 
 export async function getTotalPenalties(
@@ -256,47 +265,10 @@ export async function getTotalPenalties(
 }
 
 export async function getRealizedPnl(
-  matchId: string,
-  agentId: string,
+  _matchId: string,
+  _agentId: string,
 ): Promise<number> {
-  const supabase = createAdminClient();
-  const { data: match } = await supabase
-    .from("matches")
-    .select("trade_rules_version")
-    .eq("id", matchId)
-    .maybeSingle();
-
-  if ((match as { trade_rules_version?: string } | null)?.trade_rules_version === "bidirectional_v2") {
-    return getLotRealizedPnl(matchId, agentId);
-  }
-
-  return getLegacyRealizedPnl(matchId, agentId);
-}
-
-async function getLegacyRealizedPnl(
-  matchId: string,
-  agentId: string,
-): Promise<number> {
-  const supabase = createAdminClient();
-  const { data } = await supabase
-    .from("portfolio_ledger_entries")
-    .select("value_usd, entry_type")
-    .eq("match_id", matchId)
-    .eq("agent_id", agentId)
-    .in("entry_type", ["trade_credit", "trade_debit"]);
-
-  if (!data) return 0;
-
-  let credits = 0;
-  let debits = 0;
-
-  for (const entry of data as Array<{ value_usd: number | null; entry_type: string }>) {
-    const val = entry.value_usd ?? 0;
-    if (entry.entry_type === "trade_credit") credits += val;
-    else if (entry.entry_type === "trade_debit") debits += val;
-  }
-
-  return credits - debits;
+  return 0;
 }
 
 export async function computeValuation(
@@ -310,8 +282,6 @@ export async function computeValuation(
   const balances = await getAllBalances(matchId, agentId);
   const penaltiesUsd = await getTotalPenalties(matchId, agentId);
   const realizedPnlUsd = await getRealizedPnl(matchId, agentId);
-  const openPositions = await getOpenPositions(matchId, agentId);
-  const positionMap = new Map(openPositions.map((p) => [p.tokenAddress.toLowerCase(), p]));
 
   let currentValueUsd = 0;
   let usdcBalanceUsd = 0;
@@ -352,8 +322,6 @@ export async function computeValuation(
     if (quote) {
       quoteSnapshotIds.push(quote.snapshotId);
       const valUsd = Number(quote.outputAmount) / 1_000_000;
-      const position = positionMap.get(balance.tokenAddress.toLowerCase());
-      const costBasisUsd = position?.costBasisUsd ?? 0;
       currentValueUsd += valUsd;
       balanceDetails.push({
         tokenAddress: balance.tokenAddress,
@@ -361,9 +329,9 @@ export async function computeValuation(
         decimals: info?.decimals ?? 18,
         amountBaseUnits: balance.amountBaseUnits,
         valueUsd: valUsd,
-        costBasisUsd,
-        unrealizedPnlUsd: valUsd - costBasisUsd,
-        exitableAmountBaseUnits: position?.exitableAmountBaseUnits ?? balance.amountBaseUnits,
+        costBasisUsd: valUsd,
+        unrealizedPnlUsd: 0,
+        exitableAmountBaseUnits: balance.amountBaseUnits,
         exposurePercent: 0,
         priceSource: "uniswap_quote",
         quoteId: quote.snapshotId,
@@ -377,17 +345,15 @@ export async function computeValuation(
           decimals: info?.decimals ?? 18,
           amountBaseUnits: balance.amountBaseUnits,
           valueUsd: 0,
-          costBasisUsd: positionMap.get(balance.tokenAddress.toLowerCase())?.costBasisUsd ?? 0,
-          unrealizedPnlUsd: -(positionMap.get(balance.tokenAddress.toLowerCase())?.costBasisUsd ?? 0),
-          exitableAmountBaseUnits: positionMap.get(balance.tokenAddress.toLowerCase())?.exitableAmountBaseUnits ?? balance.amountBaseUnits,
+          costBasisUsd: 0,
+          unrealizedPnlUsd: 0,
+          exitableAmountBaseUnits: balance.amountBaseUnits,
           exposurePercent: 0,
           priceSource: "none",
           quoteId: null,
         });
       } else {
         const lastValue = await getLastKnownValue(matchId, agentId, balance.tokenAddress);
-        const position = positionMap.get(balance.tokenAddress.toLowerCase());
-        const costBasisUsd = position?.costBasisUsd ?? 0;
         currentValueUsd += lastValue;
         balanceDetails.push({
           tokenAddress: balance.tokenAddress,
@@ -395,9 +361,9 @@ export async function computeValuation(
           decimals: info?.decimals ?? 18,
           amountBaseUnits: balance.amountBaseUnits,
           valueUsd: lastValue,
-          costBasisUsd,
-          unrealizedPnlUsd: lastValue - costBasisUsd,
-          exitableAmountBaseUnits: position?.exitableAmountBaseUnits ?? balance.amountBaseUnits,
+          costBasisUsd: lastValue,
+          unrealizedPnlUsd: 0,
+          exitableAmountBaseUnits: balance.amountBaseUnits,
           exposurePercent: 0,
           priceSource: "last_known",
           quoteId: null,

@@ -85,5 +85,6 @@ export type MatchViewer = {
 export type ActiveMatchSnapshot = {
   viewer: MatchViewer;
   activeMatch: MatchView | null;
+  recentSettledMatch: MatchView | null;
   generatedAt: string;
 };

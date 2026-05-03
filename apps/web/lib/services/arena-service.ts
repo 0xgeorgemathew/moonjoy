@@ -138,10 +138,12 @@ export async function getArenaSnapshot(privyUserId: string): Promise<ArenaSnapsh
   };
 
   let activeMatch: MatchView | null = null;
+  let recentSettledMatch: MatchView | null = null;
   if (agent?.smart_account_address && hasMcpApproval) {
     try {
       const snap = await getActiveMatchSnapshotForUser(privyUserId);
       activeMatch = snap.activeMatch;
+      recentSettledMatch = snap.recentSettledMatch;
     } catch {
       // Active match may fail if setup incomplete
     }
@@ -159,8 +161,12 @@ export async function getArenaSnapshot(privyUserId: string): Promise<ArenaSnapsh
   const planning = await loadPlanningMessages(supabase, userId, agent?.id ?? null);
 
   let live: LiveMatchData | null = null;
+  let recentSettledPortfolios: ArenaSnapshot["recentSettledPortfolios"] = null;
   if (activeMatch && activeMatch.status !== "created" && activeMatch.status !== "canceled") {
     live = await buildLiveData(activeMatch, agent?.id ?? null);
+  }
+  if (recentSettledMatch) {
+    recentSettledPortfolios = await buildSettledPortfolios(recentSettledMatch);
   }
 
   return {
@@ -169,6 +175,8 @@ export async function getArenaSnapshot(privyUserId: string): Promise<ArenaSnapsh
     planning,
     strategies,
     activeMatch,
+    recentSettledMatch,
+    recentSettledPortfolios,
     openInvite,
     live,
     generatedAt: new Date().toISOString(),
@@ -256,6 +264,8 @@ function buildUnauthenticatedSnapshot(): ArenaSnapshot {
     planning: [],
     strategies: [],
     activeMatch: null,
+    recentSettledMatch: null,
+    recentSettledPortfolios: null,
     openInvite: null,
     live: null,
     generatedAt: new Date().toISOString(),
@@ -364,6 +374,25 @@ async function buildLiveData(
   };
 }
 
+async function buildSettledPortfolios(
+  match: MatchView,
+): Promise<ArenaSnapshot["recentSettledPortfolios"]> {
+  const creator = await buildPortfolioView(
+    match.id,
+    match.creator.agentId,
+    match.startingCapitalUsd,
+  );
+  const opponent = match.opponent
+    ? await buildPortfolioView(
+        match.id,
+        match.opponent.agentId,
+        match.startingCapitalUsd,
+      )
+    : null;
+
+  return { creator, opponent };
+}
+
 async function loadEnrichedTrades(
   supabase: ReturnType<typeof createAdminClient>,
   matchId: string,
@@ -437,16 +466,16 @@ async function loadMandatoryWindowResults(
 ): Promise<MandatoryWindowResult[]> {
   const { data } = await supabase
     .from("mandatory_window_results")
-    .select("window_name, completed, penalty_usd, created_at")
+    .select("window_name, completed, penalty_usd, assessed_at")
     .eq("match_id", matchId)
-    .order("created_at", { ascending: true });
+    .order("assessed_at", { ascending: true });
 
   if (!data) return [];
   return data.map((r) => ({
     windowName: r.window_name as "opening_window" | "closing_window",
     completed: Boolean(r.completed),
     penaltyUsd: Number(r.penalty_usd),
-    assessedAt: r.created_at as string,
+    assessedAt: r.assessed_at as string,
   }));
 }
 

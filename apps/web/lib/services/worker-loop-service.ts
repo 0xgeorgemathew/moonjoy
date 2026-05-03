@@ -15,6 +15,7 @@ import {
   type ValuationResult,
 } from "@/lib/services/portfolio-ledger-service";
 import { initializeMatchTokenAllowlist } from "@/lib/services/token-universe-service";
+import { syncMatchAgentStats } from "@/lib/services/agent-stats-service";
 
 export type WorkerTickResult = {
   matchId: string;
@@ -56,6 +57,79 @@ export async function tickActiveMatch(
 
   const previousPhase = status;
 
+  // Always ensure starting balances exist for live or settling matches.
+  const creatorAgentId = row.creator_agent_id as string;
+  const opponentAgentId = row.opponent_agent_id as string;
+  const startingCapital = Number(row.starting_capital_usd);
+
+  for (const agentId of [creatorAgentId, opponentAgentId]) {
+    const { data: existingEntries } = await supabase
+      .from("portfolio_ledger_entries")
+      .select("id")
+      .eq("match_id", matchId)
+      .eq("agent_id", agentId)
+      .eq("entry_type", "starting_balance")
+      .limit(1);
+
+    if (!existingEntries || existingEntries.length === 0) {
+      await initializeStartingBalances(matchId, agentId, startingCapital);
+      actions.push(`initialized_portfolio_${agentId === creatorAgentId ? "creator" : "opponent"}`);
+    }
+  }
+
+  const { data: existingAllowlist } = await supabase
+    .from("match_token_allowlists")
+    .select("id")
+    .eq("match_id", matchId)
+    .limit(1);
+  if (!existingAllowlist || existingAllowlist.length === 0) {
+    await initializeMatchTokenAllowlist(matchId);
+    actions.push("initialized_token_allowlist");
+  }
+
+  if (status === "live" && liveStartedAt) {
+    const creatorAddress = row.creator_smart_account_address as string;
+    const opponentAddress = row.opponent_smart_account_address as string;
+
+    if (liveEndsAt && now.getTime() < liveEndsAt.getTime()) {
+      const creatorValuation = await computeValuation(
+        matchId,
+        creatorAgentId,
+        "live",
+        startingCapital,
+        creatorAddress,
+      );
+      const opponentValuation = await computeValuation(
+        matchId,
+        opponentAgentId,
+        "live",
+        startingCapital,
+        opponentAddress,
+      );
+      actions.push("refreshed_valuations");
+
+      await broadcastValuationRefreshed(matchId, creatorAgentId, opponentAgentId);
+
+      const windows = getMandatoryWindows(liveStartedAt, liveEndsAt);
+      for (const window of windows) {
+        if (now.getTime() >= window.endsAt.getTime()) {
+          await assessWindowForAgent(
+            matchId,
+            creatorAgentId,
+            window,
+            startingCapital,
+          );
+          await assessWindowForAgent(
+            matchId,
+            opponentAgentId,
+            window,
+            startingCapital,
+          );
+        }
+      }
+    }
+  }
+
   // Transition live → settling when match time expires
   if (status === "live" && liveEndsAt && now.getTime() >= liveEndsAt.getTime()) {
     await supabase
@@ -64,83 +138,9 @@ export async function tickActiveMatch(
       .eq("id", matchId)
       .eq("status", "live");
     actions.push("transitioned_to_settling");
-    return { matchId, previousPhase, currentPhase: "settling", actions };
   }
 
-  if (status === "live" && liveStartedAt && liveEndsAt) {
-    const creatorAgentId = row.creator_agent_id as string;
-    const opponentAgentId = row.opponent_agent_id as string;
-    const startingCapital = Number(row.starting_capital_usd);
-    const creatorAddress = row.creator_smart_account_address as string;
-    const opponentAddress = row.opponent_smart_account_address as string;
-
-    // Initialize portfolios per-agent if not done yet
-    for (const agentId of [creatorAgentId, opponentAgentId]) {
-      const { data: existingEntries } = await supabase
-        .from("portfolio_ledger_entries")
-        .select("id")
-        .eq("match_id", matchId)
-        .eq("agent_id", agentId)
-        .eq("entry_type", "starting_balance")
-        .limit(1);
-
-      if (!existingEntries || existingEntries.length === 0) {
-        await initializeStartingBalances(matchId, agentId, startingCapital);
-        actions.push(`initialized_portfolio_${agentId === creatorAgentId ? "creator" : "opponent"}`);
-      }
-    }
-
-    // Initialize token allowlist once
-    const { data: existingAllowlist } = await supabase
-      .from("match_token_allowlists")
-      .select("id")
-      .eq("match_id", matchId)
-      .limit(1);
-    if (!existingAllowlist || existingAllowlist.length === 0) {
-      await initializeMatchTokenAllowlist(matchId);
-      actions.push("initialized_token_allowlist");
-    }
-
-    // Refresh valuations
-    const creatorValuation = await computeValuation(
-      matchId,
-      creatorAgentId,
-      "live",
-      startingCapital,
-      creatorAddress,
-    );
-    const opponentValuation = await computeValuation(
-      matchId,
-      opponentAgentId,
-      "live",
-      startingCapital,
-      opponentAddress,
-    );
-    actions.push("refreshed_valuations");
-
-    await broadcastValuationRefreshed(matchId, creatorAgentId, opponentAgentId);
-
-    // Check mandatory windows
-    const windows = getMandatoryWindows(liveStartedAt, liveEndsAt);
-    for (const window of windows) {
-      if (now.getTime() >= window.endsAt.getTime()) {
-        await assessWindowForAgent(
-          matchId,
-          creatorAgentId,
-          window,
-          startingCapital,
-        );
-        await assessWindowForAgent(
-          matchId,
-          opponentAgentId,
-          window,
-          startingCapital,
-        );
-      }
-    }
-  }
-
-  if (status === "settling") {
+  if (status === "settling" || actions.includes("transitioned_to_settling")) {
     await settleMatchFromWorker(matchId, now);
     actions.push("settled");
   }
@@ -183,13 +183,18 @@ async function assessWindowForAgent(
 
   const penaltyUsd = check.completed ? 0 : computeMandatoryWindowPenalty(startingCapital);
 
-  await supabase.from("mandatory_window_results").insert({
+  const { error: insertError } = await supabase.from("mandatory_window_results").insert({
     match_id: matchId,
     agent_id: agentId,
     window_name: window.name,
     completed: check.completed,
     penalty_usd: penaltyUsd,
   });
+
+  if (insertError) {
+    if (insertError.code === "23505") return;
+    throw new Error(`Failed to record mandatory window result: ${insertError.message}`);
+  }
 
   if (!check.completed && penaltyUsd > 0) {
     await applyPenaltyLedger(matchId, agentId, penaltyUsd, window.name);
@@ -247,6 +252,20 @@ async function settleMatchFromWorker(
     }
   }
 
+  const { data: creatorWindows } = await supabase
+    .from("mandatory_window_results")
+    .select("id")
+    .eq("match_id", matchId)
+    .eq("agent_id", creatorAgentId)
+    .eq("completed", true);
+
+  const { data: opponentWindows } = await supabase
+    .from("mandatory_window_results")
+    .select("id")
+    .eq("match_id", matchId)
+    .eq("agent_id", opponentAgentId)
+    .eq("completed", true);
+
   const creatorPenalties = await getTotalPenalties(matchId, creatorAgentId);
   const opponentPenalties = await getTotalPenalties(matchId, opponentAgentId);
 
@@ -297,7 +316,7 @@ async function settleMatchFromWorker(
     penaltiesUsd: creatorPenalties,
     netScoreUsd: creatorValuation.netScoreUsd,
     netScorePercent: creatorValuation.netScorePercent,
-    mandatoryWindowsCompleted: 0,
+    mandatoryWindowsCompleted: creatorWindows?.length ?? 0,
     failedTradeCount: creatorFailedCount ?? 0,
     maxDrawdownPercent: creatorValuation.maxDrawdownPercent,
     lastProfitableTradeAt: creatorLastProfitable
@@ -318,7 +337,7 @@ async function settleMatchFromWorker(
     penaltiesUsd: opponentPenalties,
     netScoreUsd: opponentValuation.netScoreUsd,
     netScorePercent: opponentValuation.netScorePercent,
-    mandatoryWindowsCompleted: 0,
+    mandatoryWindowsCompleted: opponentWindows?.length ?? 0,
     failedTradeCount: opponentFailedCount ?? 0,
     maxDrawdownPercent: opponentValuation.maxDrawdownPercent,
     lastProfitableTradeAt: opponentLastProfitable
@@ -362,6 +381,8 @@ async function settleMatchFromWorker(
     })
     .eq("id", matchId)
     .eq("status", "settling");
+
+  await syncMatchAgentStats(matchId);
 }
 
 export async function getActiveMatchesForWorker(): Promise<string[]> {

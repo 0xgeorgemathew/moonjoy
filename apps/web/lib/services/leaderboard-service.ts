@@ -70,8 +70,8 @@ export async function getLeaderboardForMatch(
       agentId: creatorAgentId,
       seat: "creator",
       startingValueUsd: startingCapital,
-      currentValueUsd: creatorVal?.currentValueUsd ?? startingCapital,
-      usdcBalanceUsd: creatorVal?.usdcBalanceUsd ?? startingCapital,
+      currentValueUsd: creatorVal?.currentValueUsd ?? 0,
+      usdcBalanceUsd: creatorVal?.usdcBalanceUsd ?? 0,
       realizedPnlUsd: creatorVal?.realizedPnlUsd ?? 0,
       unrealizedPnlUsd: creatorVal?.unrealizedPnlUsd ?? 0,
       totalPnlUsd: creatorVal?.totalPnlUsd ?? 0,
@@ -88,8 +88,8 @@ export async function getLeaderboardForMatch(
       agentId: opponentAgentId,
       seat: "opponent",
       startingValueUsd: startingCapital,
-      currentValueUsd: opponentVal?.currentValueUsd ?? startingCapital,
-      usdcBalanceUsd: opponentVal?.usdcBalanceUsd ?? startingCapital,
+      currentValueUsd: opponentVal?.currentValueUsd ?? 0,
+      usdcBalanceUsd: opponentVal?.usdcBalanceUsd ?? 0,
       realizedPnlUsd: opponentVal?.realizedPnlUsd ?? 0,
       unrealizedPnlUsd: opponentVal?.unrealizedPnlUsd ?? 0,
       totalPnlUsd: opponentVal?.totalPnlUsd ?? 0,
@@ -140,7 +140,47 @@ async function getLatestValuation(
     .limit(1)
     .maybeSingle();
 
-  if (!data) return null;
+  if (!data) {
+    const ledgerBalances = await getAllBalances(matchId, agentId);
+    const usdcBalance = ledgerBalances.find(
+      (b) => b.tokenAddress.toLowerCase() === "0x833589fcd6edb6e08f4c7c32d4f71b54bda02913",
+    );
+
+    if (!usdcBalance) return null;
+
+    const usdcBalanceUsd = Number(usdcBalance.amountBaseUnits) / 1_000_000;
+    return {
+      startingValueUsd: usdcBalanceUsd,
+      currentValueUsd: usdcBalanceUsd,
+      usdcBalanceUsd,
+      realizedPnlUsd: 0,
+      unrealizedPnlUsd: 0,
+      totalPnlUsd: 0,
+      pnlPercent: 0,
+      penaltiesUsd: 0,
+      penaltyImpactUsd: 0,
+      netScoreUsd: 0,
+      netScorePercent: 0,
+      maxDrawdownPercent: 0,
+      stale: false,
+      quoteSnapshotIds: [],
+      balanceDetails: [
+        {
+          tokenAddress: usdcBalance.tokenAddress,
+          symbol: "USDC",
+          decimals: 6,
+          amountBaseUnits: usdcBalance.amountBaseUnits,
+          valueUsd: usdcBalanceUsd,
+          costBasisUsd: usdcBalanceUsd,
+          unrealizedPnlUsd: 0,
+          exitableAmountBaseUnits: usdcBalance.amountBaseUnits,
+          exposurePercent: 0,
+          priceSource: "ledger",
+          quoteId: null,
+        },
+      ],
+    };
+  }
 
   const d = data as Record<string, unknown>;
   const balances = (d.balances as Array<{ tokenAddress: string; valueUsd: number }> | null) ?? [];

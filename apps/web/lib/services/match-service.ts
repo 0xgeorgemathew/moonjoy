@@ -16,6 +16,10 @@ import { resolveUser } from "@/lib/services/ens-resolution-service";
 import {
   notifyMatchEventSessions,
 } from "@/lib/services/mcp-session-notification-service";
+import {
+  initializeStartingBalances,
+} from "@/lib/services/portfolio-ledger-service";
+import { initializeMatchTokenAllowlist } from "@/lib/services/token-universe-service";
 import { tickActiveMatch } from "@/lib/services/worker-loop-service";
 import {
   requirePhaseThreeReadyUser,
@@ -137,6 +141,62 @@ export async function startLiveForUser(
   return ensureLive(actor, matchId);
 }
 
+export async function markMatchReadyForMcpContext(
+  context: McpRuntimeContext,
+  matchId: string,
+): Promise<{
+  match: MatchView;
+  ready: {
+    marked: boolean;
+    alreadyMarked: boolean;
+    seat: "creator" | "opponent";
+    totalReadyAgents: number;
+    readyAgentIds: string[];
+    recordedAt: string;
+  };
+}> {
+  const actor = await getActorForMcpContext(context);
+  const row = await requireOwnedMatch(matchId, actor.agentId);
+  const reconciled = await reconcilePersistedMatch(row);
+
+  if (reconciled.status !== "warmup") {
+    throw new MatchServiceError("Agents can only mark ready during warmup.", 409);
+  }
+
+  const seat = getSeatForAgent(reconciled, actor.agentId);
+  if (!seat) {
+    throw new MatchServiceError("Match not found for this agent.", 404);
+  }
+
+  const readiness = await getWarmupReadyAgents(reconciled.id);
+  const alreadyMarked = readiness.readyAgentIds.includes(actor.agentId);
+  const recordedAt = new Date().toISOString();
+
+  if (!alreadyMarked) {
+    await recordMatchEvent(reconciled, "match.agent_ready_marked", {
+      agentId: actor.agentId,
+      seat,
+      recordedAt,
+    });
+  }
+
+  const updatedReadiness = alreadyMarked
+    ? readiness
+    : await getWarmupReadyAgents(reconciled.id);
+
+  return {
+    match: await presentMatch(reconciled, actor.agentId),
+    ready: {
+      marked: true,
+      alreadyMarked,
+      seat,
+      totalReadyAgents: updatedReadiness.readyAgentIds.length,
+      readyAgentIds: updatedReadiness.readyAgentIds,
+      recordedAt,
+    },
+  };
+}
+
 export async function settleMatchForUser(
   privyUserId: string,
   matchId: string,
@@ -153,10 +213,33 @@ async function getActiveSnapshot(actor: MatchActor): Promise<ActiveMatchSnapshot
     reconciled && ACTIVE_MATCH_STATUSES.includes(reconciled.status)
       ? await presentMatch(reconciled, actor.agentId)
       : null;
+  const recentSettledMatch = !activeMatch
+    ? await loadRecentSettledMatch(actor.agentId)
+    : null;
+
+  if (activeMatch && ["live", "settling"].includes(activeMatch.status)) {
+    const matchId = activeMatch.id;
+    const agentId = actor.agentId;
+    const startingCapital = activeMatch.startingCapitalUsd;
+    if (matchId && startingCapital) {
+      const supabase = createAdminClient();
+      const { data: existing } = await supabase
+        .from("portfolio_ledger_entries")
+        .select("id")
+        .eq("match_id", matchId)
+        .eq("agent_id", agentId)
+        .eq("entry_type", "starting_balance")
+        .limit(1);
+      if (!existing || existing.length === 0) {
+        await initializeStartingBalances(matchId, agentId, startingCapital);
+      }
+    }
+  }
 
   return {
     viewer: toViewer(actor),
     activeMatch,
+    recentSettledMatch,
     generatedAt: new Date().toISOString(),
   };
 }
@@ -213,6 +296,18 @@ async function ensureLive(actor: MatchActor, matchId: string): Promise<MatchView
       "match.live_started",
       actor.agentId,
     );
+
+    const startingCapital = Number(nextRow.starting_capital_usd);
+    const creatorAgentId = nextRow.creator_agent_id;
+    const opponentAgentId = nextRow.opponent_agent_id;
+
+    if (creatorAgentId) {
+      await initializeStartingBalances(nextRow.id, creatorAgentId, startingCapital);
+    }
+    if (opponentAgentId) {
+      await initializeStartingBalances(nextRow.id, opponentAgentId, startingCapital);
+    }
+    await initializeMatchTokenAllowlist(nextRow.id);
 
     return presentMatch(nextRow, actor.agentId);
   } catch (error) {
@@ -441,6 +536,33 @@ async function findLatestMatchForAgent(agentId: string): Promise<MatchRow | null
   return (active.data as unknown as MatchRow | null) ?? null;
 }
 
+async function findLatestSettledMatchForAgent(agentId: string): Promise<MatchRow | null> {
+  const supabase = createAdminClient();
+  const settled = await supabase
+    .from("matches")
+    .select(MATCH_COLUMNS)
+    .or(`creator_agent_id.eq.${agentId},opponent_agent_id.eq.${agentId}`)
+    .eq("status", "settled")
+    .order("settled_at", { ascending: false })
+    .limit(1)
+    .maybeSingle();
+
+  if (settled.error) {
+    throw new MatchServiceError("Failed to load recent settled match.", 500);
+  }
+
+  return (settled.data as unknown as MatchRow | null) ?? null;
+}
+
+async function loadRecentSettledMatch(agentId: string): Promise<MatchView | null> {
+  const settledRow = await findLatestSettledMatchForAgent(agentId);
+  if (!settledRow) {
+    return null;
+  }
+
+  return presentMatch(settledRow, agentId);
+}
+
 async function requireOwnedMatch(
   matchId: string,
   agentId: string,
@@ -454,6 +576,21 @@ async function requireOwnedMatch(
   }
 
   return row;
+}
+
+function getSeatForAgent(
+  row: MatchRow,
+  agentId: string,
+): "creator" | "opponent" | null {
+  if (row.creator_agent_id === agentId) {
+    return "creator";
+  }
+
+  if (row.opponent_agent_id === agentId) {
+    return "opponent";
+  }
+
+  return null;
 }
 
 async function fetchMatchRow(matchId: string): Promise<MatchRow> {
@@ -493,6 +630,35 @@ async function reconcilePersistedMatch(row: MatchRow): Promise<MatchRow> {
 
   try {
     const nextRow = await persistStateTransition(row, nextState, eventType);
+
+    if (nextState.status === "live") {
+      const startingCapital = Number(nextRow.starting_capital_usd);
+      const creatorAgentId = nextRow.creator_agent_id;
+      const opponentAgentId = nextRow.opponent_agent_id;
+      console.log(`[match-service] reconcilePersistedMatch: initializing balances for live match`, {
+        matchId: nextRow.id,
+        creatorAgentId,
+        opponentAgentId,
+        startingCapital,
+      });
+      try {
+        if (creatorAgentId) {
+          await initializeStartingBalances(nextRow.id, creatorAgentId, startingCapital);
+        }
+        if (opponentAgentId) {
+          await initializeStartingBalances(nextRow.id, opponentAgentId, startingCapital);
+        }
+        await initializeMatchTokenAllowlist(nextRow.id);
+      } catch (initError) {
+        console.error(`[match-service] reconcilePersistedMatch: FAILED to initialize balances`, {
+          matchId: nextRow.id,
+          error: initError instanceof Error ? initError.message : String(initError),
+          stack: initError instanceof Error ? initError.stack : undefined,
+        });
+        throw initError;
+      }
+    }
+
     const persistedState = matchRowToState(nextRow);
     if (isSettlementGraceExpired(now, persistedState)) {
       return autoSettleUnscoredMatch(nextRow, now);
@@ -508,6 +674,28 @@ async function reconcilePersistedMatch(row: MatchRow): Promise<MatchRow> {
       const latestState = matchRowToState(latestRow);
 
       if (latestState.status !== currentState.status) {
+        if (latestState.status === "live") {
+          console.log(`[match-service] reconcilePersistedMatch catch: initializing balances for raced live match`, {
+            matchId: latestRow.id,
+          });
+          const startingCapital = Number(latestRow.starting_capital_usd);
+          const creatorAgentId = latestRow.creator_agent_id;
+          const opponentAgentId = latestRow.opponent_agent_id;
+          try {
+            if (creatorAgentId) {
+              await initializeStartingBalances(latestRow.id, creatorAgentId, startingCapital);
+            }
+            if (opponentAgentId) {
+              await initializeStartingBalances(latestRow.id, opponentAgentId, startingCapital);
+            }
+            await initializeMatchTokenAllowlist(latestRow.id);
+          } catch (initError) {
+            console.error(`[match-service] reconcilePersistedMatch catch: FAILED to initialize balances`, {
+              matchId: latestRow.id,
+              error: initError instanceof Error ? initError.message : String(initError),
+            });
+          }
+        }
         return latestRow;
       }
     }
@@ -604,6 +792,30 @@ async function recordMatchEvent(
     broadcastMatchUpdate(row, eventType),
     notifyMatchUpdate(row, eventType, payload),
   ]);
+}
+
+async function getWarmupReadyAgents(matchId: string): Promise<{
+  readyAgentIds: string[];
+}> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("match_events")
+    .select("payload, created_at")
+    .eq("match_id", matchId)
+    .eq("event_type", "match.agent_ready_marked")
+    .order("created_at", { ascending: false });
+
+  if (error || !data) {
+    return { readyAgentIds: [] };
+  }
+
+  const readyAgentIds = Array.from(new Set(
+    (data as Array<{ payload: Record<string, unknown> | null }>)
+      .map((event) => event.payload?.agentId)
+      .filter((agentId): agentId is string => typeof agentId === "string"),
+  ));
+
+  return { readyAgentIds };
 }
 
 async function notifyMatchUpdate(

@@ -52,7 +52,7 @@ export async function POST(
 
     const { data: match } = await supabase
       .from("matches")
-      .select("creator_agent_id, opponent_agent_id, starting_capital_usd")
+      .select("creator_agent_id, opponent_agent_id")
       .eq("id", matchId)
       .single();
 
@@ -79,7 +79,6 @@ export async function POST(
       tokenIn: body.tokenIn,
       tokenOut: body.tokenOut,
       amountInBaseUnits: body.amountInBaseUnits,
-      startingCapitalUsd: Number(matchRow.starting_capital_usd),
       quoteSnapshotId: body.quoteSnapshotId,
     });
 

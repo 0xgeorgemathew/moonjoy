@@ -120,7 +120,6 @@ export type BootstrapRecommendation =
       toolName: null;
       args: Record<string, never>;
       reason: string;
-      canRunAutomatically: false;
     }
   | {
       status: "pending";
@@ -128,7 +127,6 @@ export type BootstrapRecommendation =
       toolName: null;
       args: Record<string, never>;
       reason: string;
-      canRunAutomatically: false;
       pendingTransactions: BootstrapPendingTransaction[];
     }
   | {
@@ -137,7 +135,6 @@ export type BootstrapRecommendation =
       toolName: "moonjoy_strategy:action=claim_identity";
       args: Record<string, never>;
       reason: string;
-      canRunAutomatically: false;
     }
   | {
       status: "actionable";
@@ -145,7 +142,6 @@ export type BootstrapRecommendation =
       toolName: "moonjoy_strategy:action=claim_identity";
       args: Record<string, never>;
       reason: string;
-      canRunAutomatically: true;
     }
   | {
       status: "actionable";
@@ -153,7 +149,6 @@ export type BootstrapRecommendation =
       toolName: "moonjoy_strategy:action=create";
       args: StrategyMutationInput;
       reason: string;
-      canRunAutomatically: true;
     }
   | {
       status: "actionable";
@@ -161,7 +156,6 @@ export type BootstrapRecommendation =
       toolName: "moonjoy_strategy:action=update";
       args: StrategyUpdateInput;
       reason: string;
-      canRunAutomatically: true;
     };
 
 export async function getAgentBootstrapState(
@@ -599,7 +593,6 @@ export function buildBootstrapRecommendationFromState(
       toolName: "moonjoy_strategy:action=claim_identity",
       args: {},
       reason: "User ENS identity is missing, so agent bootstrap cannot proceed.",
-      canRunAutomatically: false,
     };
   }
 
@@ -611,7 +604,6 @@ export function buildBootstrapRecommendationFromState(
       args: {},
       reason:
         "An account-abstracted identity transaction is still settling. Re-read Moonjoy state after it confirms.",
-      canRunAutomatically: false,
       pendingTransactions: state.pendingTransactions,
     };
   }
@@ -625,7 +617,6 @@ export function buildBootstrapRecommendationFromState(
         args: {},
         reason:
           "Agent ENS identity is still missing, but wallet execution authority is unavailable.",
-        canRunAutomatically: false,
       };
     }
 
@@ -636,8 +627,7 @@ export function buildBootstrapRecommendationFromState(
       args: {},
       reason:
         state.derivedAgentStatusReason ??
-        "Claim the derived agent ENS identity and sync its public records.",
-      canRunAutomatically: true,
+          "Claim the derived agent ENS identity and sync its public records.",
     };
   }
 
@@ -653,7 +643,6 @@ export function buildBootstrapRecommendationFromState(
         args: {},
         reason:
           "Agent ENS currently resolves to the smart wallet, but the ENS NFT is still owned by the human EOA.",
-        canRunAutomatically: true,
       };
     }
 
@@ -664,7 +653,6 @@ export function buildBootstrapRecommendationFromState(
       args: {},
       reason:
         "Agent ENS currently resolves to the smart wallet, but the ENS NFT is owned by a different address.",
-      canRunAutomatically: false,
     };
   }
 
@@ -675,7 +663,6 @@ export function buildBootstrapRecommendationFromState(
       toolName: "moonjoy_strategy:action=create",
       args: buildDefaultBootstrapStrategy(state),
       reason: "The agent does not have an active default strategy yet.",
-      canRunAutomatically: true,
     };
   }
 
@@ -685,7 +672,6 @@ export function buildBootstrapRecommendationFromState(
     toolName: null,
     args: {},
     reason: "Agent identity and default strategy are already bootstrapped.",
-    canRunAutomatically: false,
   };
 }
 
