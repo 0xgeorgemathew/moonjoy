@@ -1,0 +1,33 @@
+-- Token base-unit amounts can exceed int8 for low-priced 18-decimal tokens.
+-- Keep the bidirectional RPC using arbitrary-precision numeric arithmetic.
+
+do $$
+declare
+  v_function_sql text;
+begin
+  select pg_get_functiondef(
+    'public.accept_bidirectional_trade(uuid,uuid,uuid,text,text,text,text,text,text,text,integer,uuid,numeric,numeric,timestamp with time zone,text,text)'::regprocedure
+  )
+  into v_function_sql;
+
+  v_function_sql := replace(
+    v_function_sql,
+    'amount_base_units::bigint',
+    'amount_base_units::numeric'
+  );
+
+  v_function_sql := replace(
+    v_function_sql,
+    'p_amount_in::bigint',
+    'p_amount_in::numeric'
+  );
+
+  v_function_sql := replace(
+    v_function_sql,
+    'v_token_balance::bigint',
+    'v_token_balance::numeric'
+  );
+
+  execute v_function_sql;
+end
+$$;
