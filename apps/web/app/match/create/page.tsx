@@ -1,5 +1,6 @@
 import { redirect } from "next/navigation";
+import { MAIN_ARENA_PATH } from "@/lib/constants/arena";
 
 export default function CreateMatchPage() {
-  redirect("/?arena=1");
+  redirect(MAIN_ARENA_PATH);
 }

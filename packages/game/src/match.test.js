@@ -58,7 +58,7 @@ test("accepting a challenge fills the opponent seat and starts warmup", () => {
   expect(accepted.opponent).toEqual(createSeat("opponent"));
   expect(accepted.timing.warmupStartedAt).toEqual(acceptedAt);
   expect(getWarmupEndsAt(accepted)).toEqual(
-    new Date("2026-04-29T00:00:35.000Z"),
+    new Date("2026-04-29T00:00:50.000Z"),
   );
 });
 
@@ -77,25 +77,25 @@ test("reconcileMatchStatus advances warmup to live and live to settling", () => 
 
   const live = reconcileMatchStatus(
     warmup,
-    new Date("2026-04-29T00:00:35.000Z"),
+    new Date("2026-04-29T00:00:50.000Z"),
   );
 
   expect(live.status).toBe("live");
   expect(live.timing.liveStartedAt).toEqual(
-    new Date("2026-04-29T00:00:35.000Z"),
+    new Date("2026-04-29T00:00:50.000Z"),
   );
   expect(live.timing.liveEndsAt).toEqual(
-    new Date("2026-04-29T00:05:35.000Z"),
+    new Date("2026-04-29T00:05:50.000Z"),
   );
 
   const settling = reconcileMatchStatus(
     live,
-    new Date("2026-04-29T00:05:35.000Z"),
+    new Date("2026-04-29T00:05:50.000Z"),
   );
 
   expect(settling.status).toBe("settling");
   expect(settling.timing.settlingStartedAt).toEqual(
-    new Date("2026-04-29T00:05:35.000Z"),
+    new Date("2026-04-29T00:05:50.000Z"),
   );
 });
 
@@ -107,7 +107,7 @@ test("explicit transition helpers reject invalid state changes", () => {
   });
 
   expect(() =>
-    startLive(created, new Date("2026-04-29T00:00:35.000Z")),
+    startLive(created, new Date("2026-04-29T00:00:50.000Z")),
   ).toThrow("Only warmup matches can transition to live.");
 
   expect(() =>
@@ -132,22 +132,22 @@ test("timer helpers expose the next lifecycle boundary", () => {
   );
 
   expect(getNextTransitionAt(warmup)).toEqual(
-    new Date("2026-04-29T00:00:35.000Z"),
+    new Date("2026-04-29T00:00:50.000Z"),
   );
   expect(
-    isReadyForLive(warmup, new Date("2026-04-29T00:00:34.000Z")),
+    isReadyForLive(warmup, new Date("2026-04-29T00:00:49.000Z")),
   ).toBe(false);
   expect(
-    isReadyForLive(warmup, new Date("2026-04-29T00:00:35.000Z")),
+    isReadyForLive(warmup, new Date("2026-04-29T00:00:50.000Z")),
   ).toBe(true);
 
-  const live = startLive(warmup, new Date("2026-04-29T00:00:35.000Z"));
-  expect(getLiveEndsAt(live)).toEqual(new Date("2026-04-29T00:05:35.000Z"));
+  const live = startLive(warmup, new Date("2026-04-29T00:00:50.000Z"));
+  expect(getLiveEndsAt(live)).toEqual(new Date("2026-04-29T00:05:50.000Z"));
   expect(getNextTransitionAt(live)).toEqual(
-    new Date("2026-04-29T00:05:35.000Z"),
+    new Date("2026-04-29T00:05:50.000Z"),
   );
   expect(
-    isReadyForSettlement(live, new Date("2026-04-29T00:05:35.000Z")),
+    isReadyForSettlement(live, new Date("2026-04-29T00:05:50.000Z")),
   ).toBe(true);
 });
 
@@ -165,35 +165,35 @@ test("settlement grace closes after the configured window", () => {
           acceptedAt: new Date("2026-04-29T00:00:05.000Z"),
         },
       ),
-      new Date("2026-04-29T00:00:35.000Z"),
+      new Date("2026-04-29T00:00:50.000Z"),
     ),
-    new Date("2026-04-29T00:05:35.000Z"),
+    new Date("2026-04-29T00:05:50.000Z"),
   );
 
   expect(
     isSettlementGraceActive(settling.timing.settlingStartedAt, settling),
   ).toBe(true);
   expect(
-    isSettlementGraceActive(new Date("2026-04-29T00:05:50.000Z"), settling),
+    isSettlementGraceActive(new Date("2026-04-29T00:06:05.000Z"), settling),
   ).toBe(true);
   expect(
-    isSettlementGraceExpired(new Date("2026-04-29T00:05:50.000Z"), settling),
+    isSettlementGraceExpired(new Date("2026-04-29T00:06:05.000Z"), settling),
   ).toBe(false);
   expect(
-    isSettlementGraceActive(new Date("2026-04-29T00:05:51.000Z"), settling),
+    isSettlementGraceActive(new Date("2026-04-29T00:06:06.000Z"), settling),
   ).toBe(false);
   expect(
-    isSettlementGraceExpired(new Date("2026-04-29T00:05:51.000Z"), settling),
+    isSettlementGraceExpired(new Date("2026-04-29T00:06:06.000Z"), settling),
   ).toBe(true);
 
   const settled = settleMatch(settling, {
     winnerSeat: "creator",
-    settledAt: new Date("2026-04-29T00:05:40.000Z"),
+    settledAt: new Date("2026-04-29T00:05:55.000Z"),
   });
   expect(
-    isSettlementGraceActive(new Date("2026-04-29T00:05:41.000Z"), settled),
+    isSettlementGraceActive(new Date("2026-04-29T00:05:56.000Z"), settled),
   ).toBe(false);
   expect(
-    isSettlementGraceExpired(new Date("2026-04-29T00:05:51.000Z"), settled),
+    isSettlementGraceExpired(new Date("2026-04-29T00:06:06.000Z"), settled),
   ).toBe(false);
 });

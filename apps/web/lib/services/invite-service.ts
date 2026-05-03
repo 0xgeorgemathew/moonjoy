@@ -13,6 +13,7 @@ import {
   DEFAULT_STARTING_USDC,
   DEFAULT_WARMUP_SECONDS,
 } from "@moonjoy/game";
+import { MAIN_ARENA_PATH } from "@/lib/constants/arena";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { resolveUser } from "@/lib/services/ens-resolution-service";
 import {
@@ -26,7 +27,7 @@ import type { Address } from "viem";
 
 export type InviteScopeType = "open" | "ens";
 
-export const MATCH_CREATION_ARENA_PATH = "/match";
+export const MATCH_CREATION_ARENA_PATH = MAIN_ARENA_PATH;
 const MATCH_PREFERENCE_KEY = "moonjoy:match_preference";
 const INVITE_EXPIRES_IN_MS = 24 * 60 * 60 * 1000;
 const SUPPORTED_WAGER_USD = [DEFAULT_MATCH_WAGER_USD] as const;

@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { useRouter } from "next/navigation";
+import { MAIN_ARENA_PATH } from "@/lib/constants/arena";
 import type { InviteScopeType } from "@/lib/services/invite-service";
 
 type InviteData = {
@@ -83,7 +84,7 @@ export default function InvitePage({
         return;
       }
       if (body.matchId) {
-        router.push(body.redirectPath ?? "/match");
+        router.push(body.redirectPath ?? MAIN_ARENA_PATH);
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join invite.");
