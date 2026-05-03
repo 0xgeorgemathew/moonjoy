@@ -54,6 +54,95 @@ function firstLabel(ens: string): string {
   return dot > 0 ? ens.slice(0, dot) : ens;
 }
 
+type ResultSummary = {
+  scoreMetric: string;
+  outcome: "winner" | "tie";
+  winnerSeat: "creator" | "opponent" | null;
+  spreadUsd: number;
+  spreadPnlPercent: number;
+  creator: {
+    currentValueUsd: number;
+    totalPnlUsd: number;
+    pnlPercent: number;
+    netScorePercent: number;
+    penaltiesUsd: number;
+  };
+  opponent: {
+    currentValueUsd: number;
+    totalPnlUsd: number;
+    pnlPercent: number;
+    netScorePercent: number;
+    penaltiesUsd: number;
+  };
+};
+
+function buildPreviewResultMatch(
+  match: MatchView,
+  creatorPortfolio: PortfolioView | null,
+  opponentPortfolio: PortfolioView | null,
+): MatchView | null {
+  if (!match.opponent || !creatorPortfolio || !opponentPortfolio) {
+    return null;
+  }
+
+  const creatorScore = creatorPortfolio.netScorePercent;
+  const opponentScore = opponentPortfolio.netScorePercent;
+  const creatorRealized = creatorPortfolio.realizedPnlUsd;
+  const opponentRealized = opponentPortfolio.realizedPnlUsd;
+
+  let winnerSeat: "creator" | "opponent" | null = null;
+  let outcome: "winner" | "tie" = "tie";
+  let spreadUsd = 0;
+  let spreadPnlPercent = 0;
+
+  if (creatorScore > opponentScore) {
+    winnerSeat = "creator";
+    outcome = "winner";
+    spreadUsd = Math.abs(creatorPortfolio.netScoreUsd - opponentPortfolio.netScoreUsd);
+    spreadPnlPercent = Math.abs(creatorScore - opponentScore);
+  } else if (opponentScore > creatorScore) {
+    winnerSeat = "opponent";
+    outcome = "winner";
+    spreadUsd = Math.abs(creatorPortfolio.netScoreUsd - opponentPortfolio.netScoreUsd);
+    spreadPnlPercent = Math.abs(creatorScore - opponentScore);
+  } else if (creatorRealized > opponentRealized) {
+    winnerSeat = "creator";
+    outcome = "winner";
+    spreadUsd = Math.abs(creatorRealized - opponentRealized);
+  } else if (opponentRealized > creatorRealized) {
+    winnerSeat = "opponent";
+    outcome = "winner";
+    spreadUsd = Math.abs(creatorRealized - opponentRealized);
+  }
+
+  const resultSummary: ResultSummary = {
+    scoreMetric: "net_normalized_pnl_percent",
+    outcome,
+    winnerSeat,
+    spreadUsd,
+    spreadPnlPercent,
+    creator: {
+      currentValueUsd: creatorPortfolio.currentValueUsd,
+      totalPnlUsd: creatorPortfolio.totalPnlUsd,
+      pnlPercent: creatorPortfolio.pnlPercent,
+      netScorePercent: creatorPortfolio.netScorePercent,
+      penaltiesUsd: creatorPortfolio.penaltiesUsd,
+    },
+    opponent: {
+      currentValueUsd: opponentPortfolio.currentValueUsd,
+      totalPnlUsd: opponentPortfolio.totalPnlUsd,
+      pnlPercent: opponentPortfolio.pnlPercent,
+      netScorePercent: opponentPortfolio.netScorePercent,
+      penaltiesUsd: opponentPortfolio.penaltiesUsd,
+    },
+  };
+
+  return {
+    ...match,
+    resultSummary,
+  };
+}
+
 // ─── Main Component ──────────────────────────────
 
 export function ArenaPanel() {
@@ -76,14 +165,6 @@ export function ArenaPanel() {
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
-
-  useEffect(() => {
-    const matchId = snapshot?.recentSettledMatch?.id ?? null;
-    if (matchId !== prevSettledMatchIdRef.current) {
-      prevSettledMatchIdRef.current = matchId;
-      setResultDismissed(false);
-    }
-  }, [snapshot?.recentSettledMatch?.id]);
 
   const fetchJson = useCallback(
     async <T,>(url: string, opts?: RequestInit): Promise<T> => {
@@ -215,26 +296,6 @@ export function ArenaPanel() {
     }
   };
 
-  if (!ready || loading) {
-    return (
-      <div className="flex h-full flex-1 items-center justify-center p-6 bg-white">
-        <div className="flex items-center gap-3">
-          <span className="text-sm font-label font-bold uppercase tracking-widest text-artemis-charcoal">Syncing arena</span>
-          <Dots />
-        </div>
-      </div>
-    );
-  }
-
-  if (!authenticated) {
-    return (
-      <div className="flex h-full flex-1 flex-col items-center justify-center gap-6 p-8 bg-white">
-        <p className="font-body text-artemis-charcoal text-center max-w-sm text-[15px]">Connect your Moonjoy account to enter the arena.</p>
-        <button type="button" onClick={() => void login()} className="neo-btn px-6 py-3 text-sm">Connect to Enter</button>
-      </div>
-    );
-  }
-
   const { viewer: _viewer, readiness, activeMatch, openInvite, live } = snapshot ?? {
     viewer: { userId: "", agentId: "", userEnsName: "", agentEnsName: "", agentTopic: "" },
     readiness: { hasUser: false, hasAgent: false, hasSmartAccount: false, hasMcpApproval: false, hasUserEns: false, hasAgentEns: false, ready: false, blockers: [] },
@@ -271,6 +332,69 @@ export function ArenaPanel() {
 
   const creatorPortfolio = live?.creatorPortfolio ?? null;
   const opponentPortfolio = live?.opponentPortfolio ?? null;
+  const shouldShowPreviewResult =
+    activeMatch?.status === "settling" ||
+    (activeMatch?.status === "live" && localRemaining === 0);
+  const previewResultMatch =
+    activeMatch && shouldShowPreviewResult
+      ? buildPreviewResultMatch(activeMatch, creatorPortfolio, opponentPortfolio)
+      : null;
+  const resultModalMatch = recentSettledMatch ?? previewResultMatch;
+  const resultModalPortfolios =
+    recentSettledMatch && recentSettledPortfolios
+      ? recentSettledPortfolios
+      : previewResultMatch
+        ? {
+            creator: creatorPortfolio,
+            opponent: opponentPortfolio,
+          }
+        : null;
+
+  useEffect(() => {
+    const matchId = resultModalMatch?.id ?? null;
+    if (matchId !== prevSettledMatchIdRef.current) {
+      prevSettledMatchIdRef.current = matchId;
+      setResultDismissed(false);
+    }
+  }, [resultModalMatch?.id]);
+
+  useEffect(() => {
+    if (!activeMatch?.id) return;
+    const shouldRefreshForSettlement =
+      activeMatch.status === "settling" ||
+      (activeMatch.status === "live" && localRemaining === 0);
+
+    if (!shouldRefreshForSettlement) return;
+
+    void refreshSnapshot();
+
+    const id = setInterval(() => {
+      void refreshSnapshot();
+    }, 1000);
+
+    return () => clearInterval(id);
+  }, [activeMatch?.id, activeMatch?.status, localRemaining, refreshSnapshot]);
+
+  if (!ready || loading) {
+    return (
+      <div className="flex h-full flex-1 items-center justify-center p-6 bg-white">
+        <div className="flex items-center gap-3">
+          <span className="text-sm font-label font-bold uppercase tracking-widest text-artemis-charcoal">Syncing arena</span>
+          <Dots />
+        </div>
+      </div>
+    );
+  }
+
+  if (!authenticated) {
+    return (
+      <div className="flex h-full flex-1 flex-col items-center justify-center gap-6 p-8 bg-white">
+        <p className="font-body text-artemis-charcoal text-center max-w-sm text-[15px]">Connect your Moonjoy account to enter the arena.</p>
+        <button type="button" onClick={() => void login()} className="neo-btn px-6 py-3 text-sm">Connect to Enter</button>
+      </div>
+    );
+  }
+
   const creatorInfo = activeMatch?.creator ? agentMap.get(activeMatch.creator.agentId) ?? null : null;
   const opponentInfo = activeMatch?.opponent ? agentMap.get(activeMatch.opponent.agentId) ?? null : null;
   const allTrades = (live?.trades ?? [])
@@ -356,13 +480,13 @@ export function ArenaPanel() {
         />
       )}
 
-      {recentSettledMatch && recentSettledPortfolios && !resultDismissed && (
+      {resultModalMatch && resultModalPortfolios && !resultDismissed && (
         <MatchResultModal
           open
           onClose={() => setResultDismissed(true)}
-          match={recentSettledMatch}
-          creatorPortfolio={recentSettledPortfolios.creator}
-          opponentPortfolio={recentSettledPortfolios.opponent}
+          match={resultModalMatch}
+          creatorPortfolio={resultModalPortfolios.creator}
+          opponentPortfolio={resultModalPortfolios.opponent}
         />
       )}
     </div>
@@ -374,6 +498,7 @@ export function ArenaPanel() {
 // ══════════════════════════════════════════════════════════
 
 function MatchHud({
+  match,
   live,
   creatorInfo,
   opponentInfo,
@@ -395,8 +520,8 @@ function MatchHud({
   eventLog: ArenaEventLogEntry[];
   feedRef: React.RefObject<HTMLDivElement | null>;
 }) {
-  const creatorScore = creatorPortfolio?.netScorePercent ?? 0;
-  const opponentScore = opponentPortfolio?.netScorePercent ?? 0;
+  const creatorScore = creatorPortfolio?.pnlPercent ?? 0;
+  const opponentScore = opponentPortfolio?.pnlPercent ?? 0;
   const creatorWinning = creatorScore > opponentScore;
   const scoresEqual = creatorScore === opponentScore;
 
@@ -416,6 +541,61 @@ function MatchHud({
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
+      {match.warmupPreparation && (
+        <div className="border-b-3 border-black bg-[#fff7df] px-4 py-3">
+          <div className="flex flex-wrap items-start justify-between gap-3">
+            <div className="space-y-2">
+              <p className="font-label text-[10px] font-bold uppercase tracking-[0.18em] text-artemis-charcoal">
+                Warm-Up Prep
+              </p>
+              <p className="font-body text-xs text-artemis-charcoal">
+                {match.warmupPreparation.guidance}
+              </p>
+            </div>
+            <div className="rounded-lg border-2 border-black bg-white px-3 py-2 shadow-[3px_3px_0_0_var(--artemis-blue)]">
+              <p className="font-label text-[9px] font-bold uppercase tracking-[0.18em] text-artemis-silver">
+                Ready Signals
+              </p>
+              <p className="mt-1 font-display text-sm font-black uppercase tracking-tight text-black">
+                {match.warmupPreparation.totalReadyAgents}/2
+              </p>
+            </div>
+          </div>
+
+          <div className="mt-3 grid gap-3 md:grid-cols-3">
+            <WarmupPrepCard
+              title="Your Public"
+              value={match.warmupPreparation.viewerPublicStrategy?.name ?? "Missing"}
+              detail={match.warmupPreparation.viewerPublicStrategy ? "Loaded for agent prep." : "Create or activate a public strategy."}
+              tone="blue"
+            />
+            <WarmupPrepCard
+              title="Your Secret"
+              value={match.warmupPreparation.viewerSecretStrategy?.name ?? "Optional"}
+              detail={match.warmupPreparation.viewerSecretStrategy ? "Available to the agent over MCP." : "No active secret sauce strategy."}
+              tone="red"
+            />
+            <WarmupPrepCard
+              title="Opponent Public"
+              value={match.warmupPreparation.opponentPublicStrategy?.name ?? "Unknown"}
+              detail={match.warmupPreparation.opponentPublicStrategy ? "Opponent posture is readable." : "No opponent public strategy published yet."}
+              tone="blue"
+            />
+          </div>
+
+          <div className="mt-3 flex flex-wrap gap-2">
+            <ReadyPill
+              label="You"
+              ready={match.warmupPreparation.viewerReadyMarked}
+            />
+            <ReadyPill
+              label="Opponent"
+              ready={match.warmupPreparation.opponentReadyMarked}
+            />
+          </div>
+        </div>
+      )}
+
       <div className="arena-scoreboard">
         <div className="arena-scoreboard-players">
           <PlayerIdentity
@@ -485,6 +665,52 @@ function MatchHud({
         </div>
       </div>
     </div>
+  );
+}
+
+function WarmupPrepCard({
+  title,
+  value,
+  detail,
+  tone,
+}: {
+  title: string;
+  value: string;
+  detail: string;
+  tone: "blue" | "red";
+}) {
+  const shadowClass =
+    tone === "red"
+      ? "shadow-[3px_3px_0_0_var(--artemis-red)]"
+      : "shadow-[3px_3px_0_0_var(--artemis-blue)]";
+
+  return (
+    <div className={`rounded-xl border-2 border-black bg-white px-3 py-3 ${shadowClass}`}>
+      <p className="font-label text-[9px] font-bold uppercase tracking-[0.18em] text-artemis-silver">
+        {title}
+      </p>
+      <p className="mt-1 font-display text-sm font-black uppercase tracking-tight text-black">
+        {value}
+      </p>
+      <p className="mt-1 font-body text-[11px] text-gray-500">{detail}</p>
+    </div>
+  );
+}
+
+function ReadyPill({ label, ready }: { label: string; ready: boolean }) {
+  return (
+    <span
+      className={`inline-flex items-center gap-1.5 rounded-lg border-2 border-black px-2.5 py-1 font-label text-[9px] font-bold uppercase tracking-[0.18em] ${
+        ready ? "bg-green-50 text-green-700" : "bg-white text-artemis-charcoal"
+      }`}
+    >
+      <span
+        className={`inline-block h-1.5 w-1.5 rounded-full ${
+          ready ? "bg-green-500" : "bg-artemis-silver"
+        }`}
+      />
+      {label}: {ready ? "Ready" : "Preparing"}
+    </span>
   );
 }
 

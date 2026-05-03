@@ -62,10 +62,14 @@ export function MatchResultModal({
     outcome === "winner" && winnerSeat != null && winnerSeat === viewerSeat;
   const isTie = outcome === "tie";
 
-  const creatorScore = creatorPortfolio?.netScorePercent ?? 0;
-  const opponentScore = opponentPortfolio?.netScorePercent ?? 0;
-  const creatorValue = creatorPortfolio?.currentValueUsd ?? 0;
-  const opponentValue = opponentPortfolio?.currentValueUsd ?? 0;
+  const creatorPnlPercent =
+    creatorPortfolio?.pnlPercent ?? summary.creator?.pnlPercent ?? 0;
+  const opponentPnlPercent =
+    opponentPortfolio?.pnlPercent ?? summary.opponent?.pnlPercent ?? 0;
+  const creatorValue =
+    creatorPortfolio?.currentValueUsd ?? summary.creator?.currentValueUsd ?? 0;
+  const opponentValue =
+    opponentPortfolio?.currentValueUsd ?? summary.opponent?.currentValueUsd ?? 0;
 
   const winnerEns =
     winnerSeat === "creator"
@@ -349,14 +353,14 @@ export function MatchResultModal({
         >
           <ScoreColumn
             label={match.creator.agentEnsName}
-            pnl={creatorScore}
+            pnlPercent={creatorPnlPercent}
             value={creatorValue}
             isWinner={winnerSeat === "creator"}
             borderRight
           />
           <ScoreColumn
             label={match.opponent?.agentEnsName ?? null}
-            pnl={opponentScore}
+            pnlPercent={opponentPnlPercent}
             value={opponentValue}
             isWinner={winnerSeat === "opponent"}
           />
@@ -418,13 +422,13 @@ export function MatchResultModal({
 
 function ScoreColumn({
   label,
-  pnl,
+  pnlPercent,
   value,
   isWinner,
   borderRight,
 }: {
   label: string | null;
-  pnl: number;
+  pnlPercent: number;
   value: number;
   isWinner: boolean;
   borderRight?: boolean;
@@ -468,11 +472,11 @@ function ScoreColumn({
           lineHeight: 1,
           letterSpacing: "-0.03em",
           color:
-            pnl > 0 ? "#E53935" : pnl < 0 ? "#455A64" : "#90A4AE",
+            pnlPercent > 0 ? "#E53935" : pnlPercent < 0 ? "#455A64" : "#90A4AE",
         }}
       >
-        {pnlSign(pnl)}
-        {(pnl * 100).toFixed(2)}%
+        {pnlSign(pnlPercent)}
+        {(pnlPercent * 100).toFixed(2)}%
       </span>
       <span
         style={{
