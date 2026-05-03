@@ -8,6 +8,7 @@ import {
   executeBootstrapStep,
   getBootstrapRecommendation,
   listStrategies,
+  readStrategy,
   recordStrategyDecision,
   runBootstrap,
   updateStrategy,
@@ -66,7 +67,7 @@ const serverInstructions = [
   "Trading is live: use moonjoy_market action=submit_trade to buy, sell, exit, or rotate simulated positions from live Uniswap quotes on Base mainnet. Pass amount as human-readable (e.g. '50' for 50 tokens); the server converts to base units. No real swaps are broadcast, and Moonjoy does not impose token-amount sizing caps beyond available simulated balance and quote validity.",
   "In a live match, use moonjoy_match action=play_turn to check phase and remaining time. Use moonjoy_market tools to discover, quote, and submit trades. The agent decides when and whether to trade through its own strategy and judgment.",
   "During no_match: keep polling with moonjoy_match action=heartbeat every 10-15 seconds. Use your client's scheduling, the bash tool, or a loop to poll periodically.",
-  "During warmup: prepare strategy, discover candidates through moonjoy_market action=dexscreener_search, validate with action=validate_candidate, mark ready. Stay active — warmup is short and you need a trading plan before live starts.",
+  "During warmup: call moonjoy_match action=prepare to load your own strategy briefing and the opponent public strategy, reason about the matchup, discover candidates through moonjoy_market action=dexscreener_search, validate with action=validate_candidate, then mark ready. Do not wait for user replies; show progress clearly while preparing.",
   "During live: use market tools to discover, quote, and submit trades. Agents may buy, sell back to USDC, fully exit positions, or rotate token-to-token when the match supports bidirectional_v2 rules. Use any token amount that the simulated balance and live quote support. If a trade fails, use the returned reason and try another valid action. Call play_turn to reconcile match state and portfolio between trades.",
   "During cycle_out, do not open new positions or rotate into non-USDC assets. Unwind risk back into USDC before settlement.",
   "Size trades from the current simulated portfolio, not from the starting bankroll. Before a buy, check available USDC. Before a sell or swap, use a token amount you actually hold in currentPortfolio.balances.",
@@ -212,10 +213,11 @@ function registerStrategyTool(server: McpServer, context: McpRuntimeContext) {
     {
       title: "Moonjoy Strategy",
       description:
-        "Strategy planning actions: list, create, update, record_decision, bootstrap_step, bootstrap_run, claim_identity.",
+        "Strategy planning actions: list, read, create, update, record_decision, bootstrap_step, bootstrap_run, claim_identity.",
       inputSchema: z.object({
-        action: z.enum(["list", "create", "update", "record_decision", "bootstrap_step", "bootstrap_run", "claim_identity", "bootstrap_recommendation"]).describe("Strategy action."),
+        action: z.enum(["list", "read", "create", "update", "record_decision", "bootstrap_step", "bootstrap_run", "claim_identity", "bootstrap_recommendation"]).describe("Strategy action."),
         strategyId: z.string().optional(),
+        strategyKind: z.enum(["public", "secret_sauce"]).optional(),
         name: z.string().optional(),
         sourceType: z.enum(["user_prompt", "md_context", "agent_generated_plan", "keeperhub_workflow", "default_behavior"]).optional(),
         manifestBody: z.record(z.string(), z.unknown()).optional(),
@@ -234,10 +236,18 @@ function registerStrategyTool(server: McpServer, context: McpRuntimeContext) {
         switch (args.action) {
           case "list":
             return jsonResult(await listStrategies(context, args.includeArchived));
+          case "read":
+            return jsonResult(
+              await readStrategy(context, {
+                strategyId: args.strategyId,
+                strategyKind: args.strategyKind,
+              }),
+            );
           case "create":
             if (!args.name) throw new Error("name is required for create.");
             return jsonResult(await createStrategy(context, {
               name: args.name,
+              strategyKind: args.strategyKind,
               sourceType: args.sourceType ?? "agent_generated_plan",
               manifestBody: args.manifestBody ?? {},
               activate: args.activate,
@@ -247,6 +257,7 @@ function registerStrategyTool(server: McpServer, context: McpRuntimeContext) {
             return jsonResult(await updateStrategy(context, {
               strategyId: args.strategyId,
               name: args.name,
+              strategyKind: args.strategyKind,
               sourceType: args.sourceType,
               manifestBody: args.manifestBody,
               status: args.status,

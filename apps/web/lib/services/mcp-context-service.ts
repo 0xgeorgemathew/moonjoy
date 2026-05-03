@@ -6,9 +6,11 @@ import { resolveUser } from "@/lib/services/ens-resolution-service";
 import {
   buildBootstrapRecommendationFromState,
   getAgentBootstrapState,
+  readStrategy,
   type BootstrapRecommendation,
 } from "@/lib/services/agent-bootstrap-service";
 import { getActiveMatchSnapshotForMcpContext } from "@/lib/services/match-service";
+import { resolveAgentStrategy } from "@/lib/services/public-strategy-service";
 import { submitSimulatedTrade } from "@/lib/services/trade-service";
 import { getTradeHistoryForMatch } from "@/lib/services/trade-service";
 import { getLeaderboardForMatch } from "@/lib/services/leaderboard-service";
@@ -19,6 +21,7 @@ import { createAdminClient } from "@/lib/supabase/admin";
 import type { McpRuntimeContext } from "@/lib/types/mcp";
 import { createPublicClient, http } from "viem";
 import { base } from "viem/chains";
+import type { MatchView } from "@/lib/types/match";
 
 const BASE_USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const ERC20_DECIMALS_ABI = [{
@@ -223,6 +226,7 @@ export async function getMoonjoyMatchStateForContext(
   activeMatch: Awaited<ReturnType<typeof getActiveMatchSnapshotForMcpContext>>["activeMatch"];
   nextRecommendedTool: string | null;
   nextActionReason: string;
+  warmupStrategyBriefing?: WarmupStrategyBriefing | null;
 }> {
   const snapshot = await getActiveMatchSnapshotForMcpContext(context);
 
@@ -235,16 +239,21 @@ export async function getMoonjoyMatchStateForContext(
   }
 
   if (snapshot.activeMatch) {
+    const warmupStrategyBriefing =
+      snapshot.activeMatch.status === "warmup"
+        ? await buildWarmupStrategyBriefing(context, snapshot.activeMatch)
+        : null;
     return {
       ...snapshot,
       nextRecommendedTool:
         snapshot.activeMatch.status === "warmup"
-          ? "moonjoy_match:action=mark_ready"
+          ? "moonjoy_match:action=prepare"
           : "moonjoy_match:action=heartbeat",
       nextActionReason:
         snapshot.activeMatch.status === "warmup"
-          ? `Active match ${snapshot.activeMatch.id} is in warmup. Validate candidates and call moonjoy_match action=mark_ready once your opening plan is ready.`
+          ? `Active match ${snapshot.activeMatch.id} is in warmup. Use moonjoy_match action=prepare to load your strategy briefing, compare it with the opponent public strategy, then validate candidates and mark ready.`
           : `Active match ${snapshot.activeMatch.id} in status=${snapshot.activeMatch.status}.`,
+      warmupStrategyBriefing,
     };
   }
 
@@ -252,6 +261,161 @@ export async function getMoonjoyMatchStateForContext(
     ...snapshot,
     nextRecommendedTool: "moonjoy_match:action=heartbeat",
     nextActionReason: "No active match yet. Keep polling with moonjoy_match action=heartbeat. Use your client's scheduling or a loop to poll every 10-15 seconds.",
+  };
+}
+
+type WarmupStrategyBriefing = {
+  viewer: {
+    publicStrategy: {
+      name: string;
+      strategyKind: "public";
+      sourceType: string;
+      manifest: Record<string, unknown>;
+      manifestPointer: string;
+    } | null;
+    secretStrategy: {
+      name: string;
+      strategyKind: "secret_sauce";
+      sourceType: string;
+      manifest: Record<string, unknown>;
+      manifestPointer: string;
+    } | null;
+  };
+  opponent: {
+    agentEnsName: string;
+    publicStrategy: Record<string, unknown> | null;
+    publicStrategyName: string | null;
+  } | null;
+  progress: Array<{
+    key: string;
+    label: string;
+    complete: boolean;
+    detail: string;
+  }>;
+  readyState: {
+    viewerReadyMarked: boolean;
+    opponentReadyMarked: boolean;
+    totalReadyAgents: number;
+  };
+  guidance: string[];
+  userFeedback: string;
+};
+
+async function buildWarmupStrategyBriefing(
+  context: McpRuntimeContext,
+  match: MatchView,
+): Promise<WarmupStrategyBriefing | null> {
+  const opponentParticipant =
+    match.viewerSeat === "creator"
+      ? match.opponent
+      : match.viewerSeat === "opponent"
+        ? match.creator
+        : null;
+
+  const [publicResult, secretResult, opponentPublicStrategy] = await Promise.all([
+    readStrategy(context, { strategyKind: "public" }).catch(() => null),
+    readStrategy(context, { strategyKind: "secret_sauce" }).catch(() => null),
+    opponentParticipant?.agentEnsName
+      ? resolveAgentStrategy(opponentParticipant.agentEnsName).catch(() => null)
+      : Promise.resolve(null),
+  ]);
+
+  const viewerPublicStrategy =
+    publicResult &&
+    publicResult.strategy &&
+    publicResult.decryptedManifest &&
+    typeof publicResult.strategy === "object"
+      ? {
+          name: String((publicResult.strategy as Record<string, unknown>).name ?? "Public Strategy"),
+          strategyKind: "public" as const,
+          sourceType: String((publicResult.strategy as Record<string, unknown>).source_type ?? "unknown"),
+          manifest: publicResult.decryptedManifest as Record<string, unknown>,
+          manifestPointer: String((publicResult.strategy as Record<string, unknown>).manifest_pointer ?? ""),
+        }
+      : null;
+
+  const viewerSecretStrategy =
+    secretResult &&
+    secretResult.strategy &&
+    secretResult.decryptedManifest &&
+    typeof secretResult.strategy === "object"
+      ? {
+          name: String((secretResult.strategy as Record<string, unknown>).name ?? "Secret Sauce"),
+          strategyKind: "secret_sauce" as const,
+          sourceType: String((secretResult.strategy as Record<string, unknown>).source_type ?? "unknown"),
+          manifest: secretResult.decryptedManifest as Record<string, unknown>,
+          manifestPointer: String((secretResult.strategy as Record<string, unknown>).manifest_pointer ?? ""),
+        }
+      : null;
+
+  const readyState = {
+    viewerReadyMarked: match.warmupPreparation?.viewerReadyMarked ?? false,
+    opponentReadyMarked: match.warmupPreparation?.opponentReadyMarked ?? false,
+    totalReadyAgents: match.warmupPreparation?.totalReadyAgents ?? 0,
+  };
+
+  const progress = [
+    {
+      key: "viewer_public_strategy",
+      label: "Loaded public strategy",
+      complete: Boolean(viewerPublicStrategy),
+      detail: viewerPublicStrategy
+        ? viewerPublicStrategy.name
+        : "No active public strategy loaded.",
+    },
+    {
+      key: "viewer_secret_strategy",
+      label: "Loaded secret sauce",
+      complete: Boolean(viewerSecretStrategy),
+      detail: viewerSecretStrategy
+        ? viewerSecretStrategy.name
+        : "No active secret sauce loaded.",
+    },
+    {
+      key: "opponent_public_strategy",
+      label: "Loaded opponent public strategy",
+      complete: Boolean(opponentPublicStrategy),
+      detail: opponentParticipant?.agentEnsName
+        ? opponentPublicStrategy
+          ? opponentParticipant.agentEnsName
+          : `No public strategy published for ${opponentParticipant.agentEnsName}.`
+        : "Opponent not assigned yet.",
+    },
+    {
+      key: "ready_marked",
+      label: "Marked ready",
+      complete: readyState.viewerReadyMarked,
+      detail: readyState.viewerReadyMarked
+        ? "Ready signal already recorded."
+        : "Still preparing opening plan.",
+    },
+  ];
+
+  return {
+    viewer: {
+      publicStrategy: viewerPublicStrategy,
+      secretStrategy: viewerSecretStrategy,
+    },
+    opponent: opponentParticipant
+      ? {
+          agentEnsName: opponentParticipant.agentEnsName,
+          publicStrategy: opponentPublicStrategy,
+          publicStrategyName:
+            typeof opponentPublicStrategy?.name === "string"
+              ? opponentPublicStrategy.name
+              : match.warmupPreparation?.opponentPublicStrategy?.name ?? null,
+        }
+      : null,
+    progress,
+    readyState,
+    guidance: [
+      "Use your own public strategy as the baseline posture.",
+      "Use secret sauce to refine sizing, timing, or private heuristics.",
+      "Compare the opponent public strategy to spot pace, risk, and likely openings.",
+      "Report preparation progress clearly and mark ready without waiting for user feedback.",
+    ],
+    userFeedback:
+      "Warmup briefing loaded. The agent should keep the user informed about strategy review, opponent read, and readiness progress while finalizing the opening plan.",
   };
 }
 
@@ -263,6 +427,7 @@ export async function runMoonjoyHeartbeat(
   identity: MoonjoyIdentity;
   match: Awaited<ReturnType<typeof getActiveMatchSnapshotForMcpContext>> | null;
   note: string;
+  warmupStrategyBriefing?: WarmupStrategyBriefing | null;
 }> {
   const actions: Array<{ name: string; detail?: unknown }> = [];
   const identity = await getMoonjoyIdentity(context);
@@ -286,6 +451,24 @@ export async function runMoonjoyHeartbeat(
       identity,
       match: snapshot,
       note: "Live match is active.",
+    };
+  }
+
+  if (snapshot.activeMatch.status === "warmup") {
+    const warmupStrategyBriefing = await buildWarmupStrategyBriefing(context, snapshot.activeMatch);
+    actions.push({
+      name: "warmup_strategy_briefing_ready",
+      detail: warmupStrategyBriefing?.progress ?? [],
+    });
+
+    return {
+      status: "active",
+      actions,
+      identity,
+      match: snapshot,
+      note:
+        "Warmup is active. The agent briefing already includes your own strategies and the opponent public strategy. Form the opening plan and report progress; do not wait for user input.",
+      warmupStrategyBriefing,
     };
   }
 
@@ -319,6 +502,7 @@ export async function playMoonjoyTurn(
   identity: MoonjoyIdentity;
   match: Awaited<ReturnType<typeof getActiveMatchSnapshotForMcpContext>> | null;
   note: string;
+  warmupStrategyBriefing?: WarmupStrategyBriefing | null;
 }> {
   const actions: Array<{ name: string; detail?: unknown }> = [];
   const identity = await getMoonjoyIdentity(context);
@@ -344,6 +528,7 @@ export async function playMoonjoyTurn(
   }
 
   if (snapshot.activeMatch.status === "warmup") {
+    const warmupStrategyBriefing = await buildWarmupStrategyBriefing(context, snapshot.activeMatch);
     return {
       status: "active",
       phase: "warmup",
@@ -356,16 +541,19 @@ export async function playMoonjoyTurn(
       acceptedTradeCountThisPhase: 0,
       rejectedTradeCountThisPhase: 0,
       nextRecommendedTools: [
+        "moonjoy_strategy:action=read",
+        "moonjoy_match:action=prepare",
         "moonjoy_market:action=dexscreener_search",
         "moonjoy_market:action=validate_candidate",
         "moonjoy_match:action=mark_ready",
-        "moonjoy_match:action=prepare",
         "moonjoy_match:action=heartbeat",
       ],
       actions,
       identity,
       match: snapshot,
-      note: `Warmup phase. Prepare strategy and discover candidates. Match ${snapshot.activeMatch.id}.`,
+      note:
+        `Warmup phase. Strategy briefing is loaded for match ${snapshot.activeMatch.id}. Compare your posture against the opponent public strategy, search candidates, and mark ready when the opening plan is settled.`,
+      warmupStrategyBriefing,
     };
   }
 
