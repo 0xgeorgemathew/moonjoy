@@ -27,6 +27,7 @@ export type MatchInvite = {
   scopedEnsName: string | null;
   wagerUsd: number;
   durationSeconds: number;
+  startingCapitalUsd: number;
   warmupSeconds: number;
   status: InviteStatus;
   createdMatchId: string | null;
@@ -70,6 +71,18 @@ export type MatchResult = {
   winnerSeat: MatchSeat | null;
   settledAt: Date;
 };
+
+export function mapViewerSeats<T>(input: {
+  viewerSeat: MatchSeat;
+  creator: T;
+  opponent: T;
+}): { viewer: T; opponent: T } {
+  if (input.viewerSeat === "creator") {
+    return { viewer: input.creator, opponent: input.opponent };
+  }
+
+  return { viewer: input.opponent, opponent: input.creator };
+}
 
 export function createMatch(params: {
   id: string;
@@ -315,6 +328,7 @@ export function createInvite(params: {
   scopedEnsName?: string;
   wagerUsd?: number;
   durationSeconds?: number;
+  startingCapitalUsd?: number;
   warmupSeconds?: number;
   expiresAt?: Date;
 }): MatchInvite {
@@ -327,6 +341,7 @@ export function createInvite(params: {
     scopedEnsName: params.scopedEnsName ?? null,
     wagerUsd: params.wagerUsd ?? DEFAULT_MATCH_WAGER_USD,
     durationSeconds: params.durationSeconds ?? DEFAULT_MATCH_DURATION_SECONDS,
+    startingCapitalUsd: params.startingCapitalUsd ?? DEFAULT_STARTING_USDC,
     warmupSeconds: params.warmupSeconds ?? DEFAULT_WARMUP_SECONDS,
     status: "open",
     createdMatchId: null,

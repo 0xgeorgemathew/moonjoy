@@ -142,26 +142,27 @@ export function selectMatchWinner(
   creator: LeaderboardRow,
   opponent: LeaderboardRow,
 ): WinnerSelection {
-  const creatorUsdc = creator.usdcBalanceUsd - creator.penaltiesUsd;
-  const opponentUsdc = opponent.usdcBalanceUsd - opponent.penaltiesUsd;
+  const creatorScore = creator.netScorePercent;
+  const opponentScore = opponent.netScorePercent;
+  const scoreSpreadPercent = Math.abs(creatorScore - opponentScore);
 
-  if (creatorUsdc > opponentUsdc) {
+  if (creatorScore > opponentScore) {
     return {
       winnerAgentId: creator.agentId,
       winnerSeat: creator.seat,
       outcome: "winner",
-      spreadUsd: Math.abs(creatorUsdc - opponentUsdc),
-      spreadPnlPercent: Math.abs((creatorUsdc - opponentUsdc) / creator.startingValueUsd),
+      spreadUsd: Math.abs(creator.netScoreUsd - opponent.netScoreUsd),
+      spreadPnlPercent: scoreSpreadPercent,
     };
   }
 
-  if (opponentUsdc > creatorUsdc) {
+  if (opponentScore > creatorScore) {
     return {
       winnerAgentId: opponent.agentId,
       winnerSeat: opponent.seat,
       outcome: "winner",
-      spreadUsd: Math.abs(creatorUsdc - opponentUsdc),
-      spreadPnlPercent: Math.abs((creatorUsdc - opponentUsdc) / opponent.startingValueUsd),
+      spreadUsd: Math.abs(creator.netScoreUsd - opponent.netScoreUsd),
+      spreadPnlPercent: scoreSpreadPercent,
     };
   }
 
@@ -216,9 +217,7 @@ export function selectMatchWinner(
 
 export function rankLeaderboard(rows: LeaderboardRow[]): LeaderboardRow[] {
   return [...rows].sort((a, b) => {
-    const aNet = a.usdcBalanceUsd - a.penaltiesUsd;
-    const bNet = b.usdcBalanceUsd - b.penaltiesUsd;
-    if (bNet !== aNet) return bNet - aNet;
+    if (b.netScorePercent !== a.netScorePercent) return b.netScorePercent - a.netScorePercent;
     if (b.realizedPnlUsd !== a.realizedPnlUsd) return b.realizedPnlUsd - a.realizedPnlUsd;
     if (a.failedTradeCount !== b.failedTradeCount) return a.failedTradeCount - b.failedTradeCount;
     return 0;

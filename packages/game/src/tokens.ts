@@ -66,3 +66,28 @@ export const REJECTED_ROUTING_TYPES = new Set([
 export const QUOTE_MAX_AGE_SECONDS = 20;
 export const VALUATION_REFRESH_SECONDS = 10;
 export const PREVIEW_REFRESH_SECONDS = 10;
+
+export function isTokenInAllowlist(
+  allowlistAddresses: string[],
+  tokenAddress: string,
+): boolean {
+  const normalized = tokenAddress.toLowerCase();
+  return allowlistAddresses.some((address) => address.toLowerCase() === normalized);
+}
+
+export function isWithinExposureCap(input: {
+  currentExposureUsd: number;
+  tradeValueUsd: number;
+  portfolioValueUsd: number;
+  maxPositionPercent: number;
+  increasesExposure: boolean;
+}): boolean {
+  if (!input.increasesExposure) return true;
+  if (input.portfolioValueUsd <= 0) {
+    throw new Error("Portfolio value must be greater than zero.");
+  }
+
+  const nextExposureUsd = input.currentExposureUsd + input.tradeValueUsd;
+  const exposurePercent = (nextExposureUsd / input.portfolioValueUsd) * 100;
+  return exposurePercent <= input.maxPositionPercent;
+}

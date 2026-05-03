@@ -8,6 +8,7 @@ import {
   expireInvite,
   DEFAULT_MATCH_WAGER_USD,
   DEFAULT_MATCH_DURATION_SECONDS,
+  DEFAULT_STARTING_USDC,
   DEFAULT_WARMUP_SECONDS,
 } from "./match";
 
@@ -30,6 +31,7 @@ describe("createInvite", () => {
     expect(invite.scopedEnsName).toBeNull();
     expect(invite.wagerUsd).toBe(DEFAULT_MATCH_WAGER_USD);
     expect(invite.durationSeconds).toBe(DEFAULT_MATCH_DURATION_SECONDS);
+    expect(invite.startingCapitalUsd).toBe(DEFAULT_STARTING_USDC);
     expect(invite.warmupSeconds).toBe(DEFAULT_WARMUP_SECONDS);
     expect(invite.createdMatchId).toBeNull();
   });

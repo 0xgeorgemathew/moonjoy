@@ -30,7 +30,7 @@ test("computeMaxDrawdownPercent returns correct drawdown", () => {
   expect(computeMaxDrawdownPercent(0, 50)).toBe(0);
 });
 
-test("selectMatchWinner picks higher USDC balance", () => {
+test("selectMatchWinner picks higher net normalized PnL", () => {
   const creator = {
     agentId: "a1",
     seat: "creator",
@@ -42,6 +42,7 @@ test("selectMatchWinner picks higher USDC balance", () => {
     totalPnlUsd: 10,
     pnlPercent: 0.1,
     penaltiesUsd: 0,
+    netScoreUsd: 10,
     netScorePercent: 0.1,
     mandatoryWindowsCompleted: 2,
     failedTradeCount: 0,
@@ -56,6 +57,7 @@ test("selectMatchWinner picks higher USDC balance", () => {
     usdcBalanceUsd: 105,
     totalPnlUsd: 5,
     pnlPercent: 0.05,
+    netScoreUsd: 5,
     netScorePercent: 0.05,
     realizedPnlUsd: 3,
     unrealizedPnlUsd: 2,
@@ -75,6 +77,7 @@ test("selectMatchWinner ties break on realized PnL", () => {
     totalPnlUsd: 10,
     pnlPercent: 0.1,
     penaltiesUsd: 0,
+    netScoreUsd: 10,
     netScorePercent: 0.1,
     mandatoryWindowsCompleted: 2,
     failedTradeCount: 0,
@@ -102,6 +105,7 @@ test("selectMatchWinner returns tie when fully equal", () => {
     totalPnlUsd: 10,
     pnlPercent: 0.1,
     penaltiesUsd: 0,
+    netScoreUsd: 10,
     netScorePercent: 0.1,
     mandatoryWindowsCompleted: 2,
     failedTradeCount: 0,
@@ -115,10 +119,10 @@ test("selectMatchWinner returns tie when fully equal", () => {
   expect(result.winnerAgentId).toBe(null);
 });
 
-test("rankLeaderboard sorts by USDC balance minus penalties descending", () => {
+test("rankLeaderboard sorts by net normalized PnL descending", () => {
   const rows = [
-    { agentId: "a1", seat: "creator", startingValueUsd: 100, currentValueUsd: 100, usdcBalanceUsd: 100, realizedPnlUsd: 0, unrealizedPnlUsd: 0, totalPnlUsd: 0, pnlPercent: 0, penaltiesUsd: 0, netScorePercent: 0.05, mandatoryWindowsCompleted: 2, failedTradeCount: 0, maxDrawdownPercent: 0, lastProfitableTradeAt: null },
-    { agentId: "a2", seat: "opponent", startingValueUsd: 100, currentValueUsd: 120, usdcBalanceUsd: 120, realizedPnlUsd: 10, unrealizedPnlUsd: 10, totalPnlUsd: 20, pnlPercent: 0.2, penaltiesUsd: 0, netScorePercent: 0.2, mandatoryWindowsCompleted: 2, failedTradeCount: 0, maxDrawdownPercent: 0, lastProfitableTradeAt: null },
+    { agentId: "a1", seat: "creator", startingValueUsd: 100, currentValueUsd: 100, usdcBalanceUsd: 100, realizedPnlUsd: 0, unrealizedPnlUsd: 0, totalPnlUsd: 0, pnlPercent: 0, penaltiesUsd: 0, netScoreUsd: 5, netScorePercent: 0.05, mandatoryWindowsCompleted: 2, failedTradeCount: 0, maxDrawdownPercent: 0, lastProfitableTradeAt: null },
+    { agentId: "a2", seat: "opponent", startingValueUsd: 100, currentValueUsd: 120, usdcBalanceUsd: 90, realizedPnlUsd: 10, unrealizedPnlUsd: 10, totalPnlUsd: 20, pnlPercent: 0.2, penaltiesUsd: 0, netScoreUsd: 20, netScorePercent: 0.2, mandatoryWindowsCompleted: 2, failedTradeCount: 0, maxDrawdownPercent: 0, lastProfitableTradeAt: null },
   ];
 
   const ranked = rankLeaderboard(rows);
