@@ -8,8 +8,8 @@ This plan is intentionally sequential. Each phase has one main outcome and a gat
 - The default match duration is 5 minutes.
 - Every match has a warm-up stage before the trading clock starts.
 - The wager is fixed at $10 for the first demo version.
-- The wager is separate from each user's trading capital.
-- Users may bring and deploy trading capital from a curated Base asset set.
+- The wager is separate from each user's simulated match trading capital.
+- For the hackathon demo, each match starts every agent with fresh simulated USDC from `starting_capital_usd` and does not inherit residual wallet tokens from earlier matches.
 - Onchain state is the source of truth wherever it exists: ENS names, ENS address resolution, ENS text records, wallet balances, token ownership, escrow deposits, escrow settlement, and transaction success.
 - The database must not duplicate onchain state as canonical product state. It may store app-only workflow state, offchain simulation data, and historical snapshots for replay.
 - The winner is the player with the best normalized PnL over the match window.
@@ -27,7 +27,7 @@ This plan is intentionally sequential. Each phase has one main outcome and a gat
 - Invite types: `open` (any eligible authenticated human can join) or `ens` (only the holder/resolved controller of a specific ENS name can join).
 - Invite terms live server-side. The shareable link carries an opaque invite token, not trusted state.
 - Match starts only after both humans have joined. Agent autonomy starts after the human creates or joins a match.
-- The agent's job is: inspect assigned match, inspect allowed capital, discover market opportunities, prepare strategy, mark ready during warm-up, submit quote-backed simulated trades during live play, record rationale.
+- The agent's job is: inspect assigned match, inspect available simulated balances, discover market opportunities, prepare strategy, mark ready during warm-up, submit quote-backed simulated trades during live play, record rationale.
 - User ENS `moonjoy:match_preference` may publish defaults for future automatch: match duration, bet amount, and preferred trading-capital range. This is reserved for future use; the first demo uses human invite links only.
 - Agents must never create challenges, browse open challenges, accept opponents, or decide matchmaking.
 
@@ -53,7 +53,7 @@ This plan is intentionally sequential. Each phase has one main outcome and a gat
 1. Human signs in.
 2. App resolves human ENS from Durin.
 3. App checks one active agent and MCP approval.
-4. App checks wager and trading capital readiness.
+4. App checks wager readiness. Trading capital initializes as simulated USDC when live play starts.
 5. Human chooses: `open` invite or `ens`-scoped invite.
 6. Server validates terms.
 7. Server locks creator wager.
@@ -90,7 +90,7 @@ This plan is intentionally sequential. Each phase has one main outcome and a gat
   4. Moonjoy requests a Uniswap quote.
   5. If quote succeeds, token can be added to the match allowlist.
   6. Bot may submit simulated trade using quote-backed execution.
-- Post-processing enforces hard Moonjoy trading constraints: token is on Base, token address is valid, token can be quoted through Uniswap on Base, quote is fresh, match is live, position/risk limits satisfied.
+- Post-processing enforces hard Moonjoy trading constraints: token is on Base, token address is valid, token can be quoted through Uniswap on Base, quote is fresh, and the match is live.
 - Moonjoy should not silently remove candidates because they look risky, low-volume, new, or volatile unless that violates an explicit match rule. Instead return `riskWarnings`:
   - `low_liquidity`
   - `low_24h_volume`
@@ -110,7 +110,7 @@ Resolve from chain, never store as canonical DB state:
   ENS address records
   ENS text records
   agent identity
-  token balances
+  wallet token balances outside the simulated match ledger
   token ownership
   escrow deposit status
   escrow settlement status
@@ -126,7 +126,7 @@ Store in DB as app workflow state:
   match state and lifecycle
   simulated wager locks before escrow exists
   Uniswap quote snapshots for replay
-  simulated trade fills
+  simulated trade fills and per-match simulated token balances
   portfolio valuation snapshots
   audit receipts such as transaction hashes, if the route also verifies chain state
 ```
@@ -272,7 +272,7 @@ The implementation order should follow these blockers:
 2. User ENS setup requires the authenticated user and embedded signer, and should use the deployed Durin registry and registrar.
 3. MCP authorization is a one-time approval that activates the external agent client after the user has a wallet foundation and user ENS identity. MCP authorization enables agent execution inside a human-approved match, not matchmaking authority.
 4. Agent-owned identity and default strategy bootstrap happen after MCP authorization. The approved agent can mint or claim its derived ENS name and create or select its default strategy through Moonjoy tools.
-5. Funding can be built independently of MCP authorization, but match invite creation and joining require a depositable $10 wager plus enough curated trading capital. The invite creation and join endpoints must record the wager deposit before creating the invite or accepting the seat.
+5. Funding can be built independently of MCP authorization, but match invite creation and joining require only the demo wager path. Trading capital is fresh simulated USDC per match.
 6. `packages/game` match constants, warm-up status, invite status rules, readiness terminology, and tests must be corrected before invite creation, join, live, or settlement flows depend on them.
 7. Match invite and lifecycle must work before Uniswap quote-backed simulated trading is useful.
 8. Portfolio scoring and replay must work before wager escrow and KeeperHub marketplace work.
@@ -297,7 +297,7 @@ Agent smart account
   assigned to: the user's single Moonjoy agent
   controlled by: human controller plus approved Moonjoy/agent execution authority
   resolves from: agent-buzz.moonjoy.eth
-  purpose: wager deposits, trading capital, Uniswap trades, agent ENS identity, reputation, victories, stats, achievements, KeeperHub payments
+  purpose: wager deposits, simulated trading actions, agent ENS identity, reputation, victories, stats, achievements, KeeperHub payments
 
 Approved external agent client
   Claude, Codex, or another MCP-capable agent
@@ -627,9 +627,9 @@ Build:
 - Show the agent smart account address and resolve the agent ENS name from Durin.
 - Let the user fund the agent smart account directly.
 - Let the user withdraw from the agent smart account when no live match blocks withdrawal.
-- Read available agent capital from token contracts and native balance at the readiness gate.
-- Read whether the agent has enough value in the curated Base trading asset set to enter a match.
-- Read whether the fixed $10 wager can be covered separately from trading capital.
+- Read wager funding state at the readiness gate.
+- Initialize simulated match trading capital as USDC from `starting_capital_usd`.
+- Read whether the fixed $10 wager can be covered separately from simulated trading capital.
 - Add a simulated wager deposit ledger for the first demo.
 - Lock the creator's $10 wager in the simulated ledger before the invite row is created.
 - Lock the joiner's $10 wager in the simulated ledger before the joiner can accept the invite.
@@ -666,8 +666,8 @@ Gate:
 - The user can see the agent smart account address and agent ENS name.
 - The user can fund the agent smart account.
 - The user can withdraw from the agent smart account outside locked match flows.
-- Moonjoy can read the agent's available match capital from chain.
-- Moonjoy can tell whether the simulated wager deposit can be recorded and curated trading capital is ready using fresh chain balance reads.
+- Moonjoy can initialize each player's simulated match capital as USDC.
+- Moonjoy can tell whether the simulated wager deposit can be recorded without depending on residual trading tokens.
 
 ## Phase 6: Game Rules Baseline And Match Readiness Gate
 
@@ -920,7 +920,7 @@ Build:
 - The contract records match id, two agent smart account addresses, amount, and status.
 - Read deposit, refund, and settlement status from the escrow contract. The database may store transaction hashes and match linkage, but not canonical escrow state.
 - The backend submits or proves the winner for the hackathon version.
-- Keep trading capital in the agent smart account outside the wager escrow.
+- Keep demo trading capital in the per-match simulated ledger outside the wager escrow.
 - The human user creates the match intent, but the agent performs the wager deposit.
 
 Initial contract responsibilities:
@@ -1016,7 +1016,7 @@ Gate:
 10. Let the approved agent mint or claim its derived ENS identity into the already-created agent smart wallet.
 11. Add user-owned strategy registry assigned to agents, including an agent-created or agent-selected default strategy.
 12. Update the agent ENS strategy text record after the default strategy manifest exists, if text writes are enabled.
-13. Add agent funding display, withdrawal entry points, simulated wager deposit locking, and readiness checks that read current chain balances for wager funds and curated trading capital.
+13. Add agent funding display, withdrawal entry points, simulated wager deposit locking, and per-match USDC ledger initialization for trading capital.
 14. Add a match readiness service used by invite create and join flows, with one-time MCP approval required.
 15. Add human invite creation flow: open and ENS-scoped invites with opaque tokens, server-side terms, creator wager lock.
 16. Add human invite join flow: invite loading by opaque token, scoped ENS validation through Durin, joiner readiness checks, joiner wager lock, match creation and warm-up start.

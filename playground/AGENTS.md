@@ -4,47 +4,45 @@ This folder is for launching agents that should operate through `moonjoy_local` 
 
 ## Primary Rule
 
-Be forward-moving. Use ENS-discovered Moonjoy identity, then either join an available match or create one. Do not ask the user for permission when Moonjoy tools expose an actionable next step.
+Act deliberately. Use ENS-discovered Moonjoy identity, read match state, and make your own trading decisions based on strategy and market data. Humans create and accept match invites through the web app — the agent never creates, discovers, accepts, or cancels invites.
 
 ## Required Launch Sequence
 
 1. Connect to `moonjoy_local`.
-2. Call `moonjoy_auto`.
-3. If the response has `status: advanced`, call `moonjoy_auto` again.
-4. If polling with `moonjoy_get_match_state` shows `nextRecommendedTool: "moonjoy_auto"` or `joinableChallengeCount > 0`, call `moonjoy_auto`.
-5. If the match is live, call `moonjoy_play_turn` before asking or reporting.
-6. If waiting with no safe mutation, call `moonjoy_heartbeat` between polls and use token/strategy tools to keep preparing. Do not ask the user whether to prepare.
-6. Report only the resulting state, active match if any, and the next real blocker.
+2. Call `moonjoy_status section=identity` to read bootstrap state.
+3. If `bootstrap.status` is "actionable", call `moonjoy_strategy action=bootstrap_run` explicitly to complete setup.
+4. Call `moonjoy_match action=heartbeat` to reconcile match state.
+5. If the match is live, call `moonjoy_match action=play_turn` to check phase, time, and portfolio.
+6. Use market tools to discover tokens, get quotes, and submit trades when the agent decides to.
+7. During live play, reassess every 20-30 seconds and keep trading when a valid next move exists.
+8. Report only the resulting state, active match if any, and the next real blocker.
 
 ## Tool Policy
 
-- `moonjoy_auto` is the primary driver. It reads ENS-backed identity, finishes bootstrap only when needed, analyzes open challenges, accepts a joinable match, or creates a new match.
-- Use `moonjoy_play_turn` first in live matches. It can auto-trade and returns follow-up tools when no immediate auto-trade is available.
-- Use `moonjoy_get_match_state` to poll while a match is active, then call `moonjoy_auto` if the state has joinable challenges or recommends `moonjoy_auto`.
-- Use `moonjoy_heartbeat` between polls. It can join or play when safe, but will not create a new challenge.
-- Use `moonjoy_discover_base_tokens`, `moonjoy_get_token_risk_profile`, `moonjoy_get_market_quote`, and strategy tools while waiting so the agent keeps preparing.
-- Use `moonjoy_list_open_challenges`, `moonjoy_create_challenge`, and `moonjoy_accept_challenge` only when you need precise control or `moonjoy_auto` is unavailable.
-- Use `moonjoy_get_identity` / `moonjoy_get_bootstrap_action` for diagnostics.
-- Lower-level bootstrap tools (`moonjoy_run_bootstrap`, `moonjoy_claim_agent_identity`, `moonjoy_execute_bootstrap_step`) are available but rarely needed.
+- `moonjoy_match action=heartbeat` is the primary state polling tool. It reads match state and returns status. Call it periodically to stay current.
+- `moonjoy_match action=play_turn` reads live match state, portfolio, and phase. It returns recommendations but does not auto-trade — the agent decides when to trade.
+- `moonjoy_market action=dexscreener_search` discovers tokens. `action=validate_candidate` checks if a token is tradable. `action=quote` previews a trade. `action=submit_trade` executes a simulated trade.
+- The opening and closing windows are minimum participation checks, not a one-trade target. If a quote-backed move is still valid, keep trading.
+- `moonjoy_strategy action=bootstrap_run` completes setup steps (agent identity, default strategy). The agent calls it explicitly when bootstrap.status is "actionable".
+- `moonjoy_status section=portfolio` reads balances and PnL. `section=leaderboard` shows match rankings.
+- Use `moonjoy_strategy action=record_decision` to record strategy rationale during and after matches.
 
 ## Stop Conditions
 
 Stop and ask the user only when:
 
-- `moonjoy_auto` returns `blocked`
 - a tool call fails
 - a genuinely ambiguous irreversible action remains
+- bootstrap status is "blocked" with no clear resolution
 
-Do not ask "should I trade", "should I prep", or "should I hold". Use play-turn, safe read-only tools, and heartbeat directly.
-
-If two agents both have open challenges, use Moonjoy's coordination fields. The canonical challenge holder waits; the yielding agent cancels its own challenge and accepts the canonical one. Do not manually cancel both challenges.
+Do not ask "should I trade", "should I prep", or "should I hold". Read state, form a judgment, and act through the appropriate tool.
 
 ## Initial Prompt
 
 Use this as the starting prompt for a fresh agent session:
 
 ```text
-Connect to moonjoy_local. Call moonjoy_auto. If status is "advanced", call moonjoy_auto again. Keep going until status is "ready_waiting" or "blocked". If there is a joinable match, accept it. If there is no active or joinable match, create one. Report the current state, any active match, and the next blocker. Do not ask for confirmation before moonjoy_auto runs bootstrap or match actions.
+Connect to moonjoy_local. Call moonjoy_status section=identity to read bootstrap state. If bootstrap.status is "actionable", call moonjoy_strategy action=bootstrap_run. Then call moonjoy_match action=heartbeat to check for an active match. If a match is live, call moonjoy_match action=play_turn, then use market tools to discover, quote, and submit trades based on your strategy. Reassess every 20-30 seconds and keep trading while live quotes support valid moves. Report the current state, any active match, and the next blocker.
 ```
 
 ## Reference Files

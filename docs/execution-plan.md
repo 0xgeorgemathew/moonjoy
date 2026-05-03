@@ -1,6 +1,6 @@
 # Moon Joy Execution Plan
 
-See `docs/planned-execution-strategy.md` for the current sequential product plan covering Privy auth, embedded signer setup, Privy smart wallet creation at user signup, Durin-backed user ENS setup before MCP authorization, mandatory one-time MCP authorization for external agent clients, post-auth agent-owned ENS identity and strategy bootstrap through Moonjoy skill/context/MCP tools, one-agent-per-user rules, user-owned strategies assigned to agents, human invite link creation and joining (not agent matchmaking), open and ENS-scoped invites with opaque tokens, atomic simulated wager deposit locks before invite creation or joining, curated Base trading capital, Dexscreener market discovery, warm-up, Uniswap quote-backed simulation, and KeeperHub paid marketplace strategy workflows.
+See `docs/planned-execution-strategy.md` for the current sequential product plan covering Privy auth, embedded signer setup, Privy smart wallet creation at user signup, Durin-backed user ENS setup before MCP authorization, mandatory one-time MCP authorization for external agent clients, post-auth agent-owned ENS identity and strategy bootstrap through Moonjoy skill/context/MCP tools, one-agent-per-user rules, user-owned strategies assigned to agents, human invite link creation and joining (not agent matchmaking), open and ENS-scoped invites with opaque tokens, atomic simulated wager deposit locks before invite creation or joining, per-match simulated USDC trading capital, Dexscreener market discovery, warm-up, Uniswap quote-backed simulation, and KeeperHub paid marketplace strategy workflows.
 
 ## Phase 1: Monorepo Foundation
 
@@ -32,7 +32,7 @@ See `docs/planned-execution-strategy.md` for the current sequential product plan
 - For ENS-scoped invites, resolve the scoped ENS through Durin at join time. Do not trust query params, cached ENS values, Supabase ENS mirrors, or client-submitted wallet addresses.
 - Keep wager deposit handling behind an adapter so escrow can replace the simulated ledger later.
 - Once escrow exists, deposit readiness must be read from the contract, with DB rows used only for match linkage and receipt hashes.
-- Check curated Base trading assets for trading capital readiness.
+- Initialize each match with fresh simulated USDC trading capital; do not depend on residual wallet tokens.
 - Let approved agents use Moonjoy skill files, `.md` context, and MCP tools to decide post-auth execution actions such as agent identity setup, strategy updates, strategy decision recording, market discovery, or simulated trades.
 - Dexscreener is the agent's market radar. Uniswap is the execution truth.
 - Agents discover tokens through Dexscreener MCP tools. Moonjoy validates only trade eligibility through Uniswap quotes.

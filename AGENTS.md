@@ -47,7 +47,7 @@ Moonjoy is a wagered PvP agent trading game.
 - Invite terms live server-side. The shareable link carries an opaque invite token, not trusted state.
 - Match starts only after both humans have joined. Agent autonomy starts after the human creates or joins a match.
 - Agents must never create challenges, browse open challenges, accept opponents, or decide matchmaking.
-- The agent's job is: inspect assigned match, inspect allowed capital, discover market opportunities, prepare strategy, mark ready during warm-up, submit quote-backed simulated trades during live play, record rationale.
+- The agent's job is: inspect assigned match, inspect available balances, discover market opportunities, prepare strategy, mark ready during warm-up, submit quote-backed simulated trades during live play, record rationale.
 - Dexscreener is the agent's market radar. Uniswap is the execution truth.
 - For ENS-scoped invites, resolve through Durin at join time. Do not trust query params, cached ENS values, Supabase ENS mirrors, or client-submitted wallet addresses.
 
@@ -208,17 +208,16 @@ Build in this order unless the user explicitly redirects:
 <claude-mem-context>
 # Memory Context
 
-# [moonjoy] recent context, 2026-05-01 12:35pm GMT+5:30
+# [moonjoy] recent context, 2026-05-03 4:32pm GMT+5:30
 
 Legend: 🎯session 🔴bugfix 🟣feature 🔄refactor ✅change 🔵discovery ⚖️decision 🚨security_alert 🔐security_note
 Format: ID TIME TYPE TITLE
 Fetch details: get_observations([IDs]) | Search: mem-search skill
 
-Stats: 50 obs (28,401t read) | 0t work
+Stats: 50 obs (28,248t read) | 0t work
 
 ### Apr 25, 2026
 1967 8:06p 🔴 Match action rules fixed — "ready" status now exposes start_match, settlement grace boundary guard added
-1968 " ✅ Railway deployment configuration added — RAILPACK builder with bunx next start, turbo.json persistent start task
 1973 " ✅ Moon Joy main branch fully synchronized with origin — clean working tree, 4 commits pushed
 1974 11:22p ⚖️ Moon Joy hackathon architecture — full system design with partner track integration
 1977 11:23p 🔵 Moon Joy tech stack research — MCP SDK, ENSjs, viem, Uniswap API, and Privy capabilities confirmed
@@ -269,4 +268,6 @@ Stats: 50 obs (28,401t read) | 0t work
 ### Apr 28, 2026
 2057 12:00a 🔵 Documentation Review Found Ordering Inconsistencies Across Planning Docs
 2058 12:03a ✅ Execution Plan Reordering: Privy Wallet as Foundation Dependency
+### May 3, 2026
+2059 9:17a 🔵 Railway MCP Access Confirmed
 </claude-mem-context>
