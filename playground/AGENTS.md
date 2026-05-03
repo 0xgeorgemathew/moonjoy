@@ -51,3 +51,12 @@ Connect to moonjoy_local. Call moonjoy_status section=identity to read bootstrap
 - `./test-prompts.md`
 
 Use them for operating behavior, not for product explanation.
+
+
+<claude-mem-context>
+# Memory Context
+
+# [playground] recent context, 2026-05-03 8:34pm GMT+5:30
+
+No previous sessions found.
+</claude-mem-context>
