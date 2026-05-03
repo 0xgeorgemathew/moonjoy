@@ -1,13 +1,11 @@
 import {
   deriveMatchPhase,
-  isTradingAllowed,
 } from "@moonjoy/game";
 import { getAgentFundingStatus } from "@/lib/services/agent-funding-service";
 import { resolveUser } from "@/lib/services/ens-resolution-service";
 import {
   buildBootstrapRecommendationFromState,
   getAgentBootstrapState,
-  runBootstrap,
   type BootstrapRecommendation,
 } from "@/lib/services/agent-bootstrap-service";
 import { getActiveMatchSnapshotForMcpContext } from "@/lib/services/match-service";
@@ -15,16 +13,75 @@ import { submitSimulatedTrade } from "@/lib/services/trade-service";
 import { getTradeHistoryForMatch } from "@/lib/services/trade-service";
 import { getLeaderboardForMatch } from "@/lib/services/leaderboard-service";
 import { fetchExactInputQuote } from "@/lib/services/uniswap-quote-service";
-import { getAllBalances, type BalanceDetail } from "@/lib/services/portfolio-ledger-service";
+import { type BalanceDetail, getAllBalances, initializeStartingBalances } from "@/lib/services/portfolio-ledger-service";
 import { getActiveTokensForMatch } from "@/lib/services/token-universe-service";
-import { tickActiveMatch } from "@/lib/services/worker-loop-service";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { McpRuntimeContext } from "@/lib/types/mcp";
+import { createPublicClient, http } from "viem";
+import { base } from "viem/chains";
 
 const BASE_USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
-const BASE_WETH_ADDRESS = "0x4200000000000000000000000000000000000006";
-const DEFAULT_AUTO_TRADE_USDC_UNITS = BigInt(10_000_000);
-const MIN_AUTO_TRADE_USDC_UNITS = BigInt(1_000_000);
+const ERC20_DECIMALS_ABI = [{
+  name: "decimals",
+  type: "function",
+  stateMutability: "view",
+  inputs: [],
+  outputs: [{ type: "uint8" }],
+}] as const;
+const baseMainnetClient = createPublicClient({ chain: base, transport: http() });
+
+export function toBaseUnits(humanAmount: string, decimals: number): string {
+  const [intPart, fracPart = ""] = humanAmount.split(".");
+  const paddedFrac = fracPart.padEnd(decimals, "0").slice(0, decimals);
+  const combined = intPart + paddedFrac;
+  return combined.replace(/^0+/, "") || "0";
+}
+
+export function fromBaseUnits(baseUnits: string, decimals: number): string {
+  const neg = baseUnits.startsWith("-");
+  const raw = neg ? baseUnits.slice(1) : baseUnits;
+  const padded = raw.padStart(decimals + 1, "0");
+  const intPart = padded.slice(0, padded.length - decimals) || "0";
+  const fracPart = padded.slice(padded.length - decimals);
+  const trimmedFrac = fracPart.replace(/0+$/, "");
+  const result = trimmedFrac ? `${intPart}.${trimmedFrac}` : intPart;
+  return neg ? `-${result}` : result;
+}
+
+const decimalsCache = new Map<string, number>();
+
+export async function getTokenDecimals(tokenAddress: string): Promise<number> {
+  const key = tokenAddress.toLowerCase();
+  if (decimalsCache.has(key)) return decimalsCache.get(key)!;
+  const supabase = createAdminClient();
+  const { data } = await supabase
+    .from("token_universe_tokens")
+    .select("decimals")
+    .eq("chain_id", 8453)
+    .eq("address", key)
+    .maybeSingle();
+
+  let dec = data ? (data as { decimals: number }).decimals : null;
+  if (dec == null) {
+    dec = await readTokenDecimalsOnchain(key);
+  }
+
+  decimalsCache.set(key, dec);
+  return dec;
+}
+
+async function readTokenDecimalsOnchain(tokenAddress: string): Promise<number> {
+  try {
+    const result = await baseMainnetClient.readContract({
+      address: tokenAddress as `0x${string}`,
+      abi: ERC20_DECIMALS_ABI,
+      functionName: "decimals",
+    });
+    return Number(result);
+  } catch {
+    return 18;
+  }
+}
 
 export type MoonjoyIdentity = {
   user: {
@@ -66,7 +123,6 @@ export type MoonjoyIdentity = {
   bootstrap: {
     status: BootstrapRecommendation["status"];
     runToolName: "moonjoy_strategy:bootstrap_run" | null;
-    shouldAutoRun: boolean;
     recommendedAction: BootstrapRecommendation;
     pendingTransactions: Awaited<
       ReturnType<typeof getAgentBootstrapState>
@@ -154,7 +210,6 @@ export async function getMoonjoyIdentity(
       status: recommendation.status,
       runToolName:
         recommendation.status === "actionable" ? "moonjoy_strategy:bootstrap_run" : null,
-      shouldAutoRun: recommendation.status === "actionable",
       recommendedAction: recommendation,
       pendingTransactions: bootstrap.pendingTransactions,
     },
@@ -175,22 +230,28 @@ export async function getMoonjoyMatchStateForContext(
     return {
       ...snapshot,
       nextRecommendedTool: "moonjoy_match:action=play_turn",
-      nextActionReason: "Live match is active. Keep trading.",
+      nextActionReason: "Live match is active. Keep trading, and unwind to USDC during cycle_out.",
     };
   }
 
   if (snapshot.activeMatch) {
     return {
       ...snapshot,
-      nextRecommendedTool: "moonjoy_match:action=heartbeat",
-      nextActionReason: `Active match ${snapshot.activeMatch.id} in status=${snapshot.activeMatch.status}.`,
+      nextRecommendedTool:
+        snapshot.activeMatch.status === "warmup"
+          ? "moonjoy_match:action=mark_ready"
+          : "moonjoy_match:action=heartbeat",
+      nextActionReason:
+        snapshot.activeMatch.status === "warmup"
+          ? `Active match ${snapshot.activeMatch.id} is in warmup. Validate candidates and call moonjoy_match action=mark_ready once your opening plan is ready.`
+          : `Active match ${snapshot.activeMatch.id} in status=${snapshot.activeMatch.status}.`,
     };
   }
 
   return {
     ...snapshot,
     nextRecommendedTool: "moonjoy_match:action=heartbeat",
-    nextActionReason: "No active match. Wait for a human to create an invite.",
+    nextActionReason: "No active match yet. Keep polling with moonjoy_match action=heartbeat. Use your client's scheduling or a loop to poll every 10-15 seconds.",
   };
 }
 
@@ -206,11 +267,6 @@ export async function runMoonjoyHeartbeat(
   const actions: Array<{ name: string; detail?: unknown }> = [];
   const identity = await getMoonjoyIdentity(context);
 
-  if (identity.bootstrap.shouldAutoRun) {
-    const result = await runBootstrap(context);
-    actions.push({ name: "moonjoy_strategy:bootstrap_run", detail: result });
-  }
-
   const snapshot = await getActiveMatchSnapshotForMcpContext(context);
 
   if (!snapshot.activeMatch) {
@@ -219,7 +275,7 @@ export async function runMoonjoyHeartbeat(
       actions,
       identity,
       match: snapshot,
-      note: "No active match. Agents cannot create invites. Wait for a human to create one.",
+      note: "No active match. Agents cannot create invites. Keep polling with moonjoy_match action=heartbeat every 10-15 seconds. Use your bash tool, client scheduler, or a loop. The match could start at any moment.",
     };
   }
 
@@ -245,12 +301,19 @@ export async function runMoonjoyHeartbeat(
 export async function playMoonjoyTurn(
   context: McpRuntimeContext,
 ): Promise<{
-  status: "no_match" | "active" | "traded" | "no_trade";
+  status: "no_match" | "active" | "no_trade";
   phase: string | null;
   timeRemainingSeconds: number | null;
   currentPortfolio: Awaited<ReturnType<typeof getMoonjoyPortfolio>> | null;
-  lastTrade: { status: string; reason?: string } | null;
+  lastTrade: {
+    status: string;
+    reason?: string;
+    tradeSide?: string | null;
+    acceptedAt?: string;
+  } | null;
   alreadyTradedThisPhase: boolean;
+  acceptedTradeCountThisPhase: number;
+  rejectedTradeCountThisPhase: number;
   nextRecommendedTools: string[];
   actions: Array<{ name: string; detail?: unknown }>;
   identity: MoonjoyIdentity;
@@ -259,11 +322,6 @@ export async function playMoonjoyTurn(
 }> {
   const actions: Array<{ name: string; detail?: unknown }> = [];
   const identity = await getMoonjoyIdentity(context);
-
-  if (identity.bootstrap.shouldAutoRun) {
-    const result = await runBootstrap(context);
-    actions.push({ name: "moonjoy_strategy:bootstrap_run", detail: result });
-  }
 
   const snapshot = await getActiveMatchSnapshotForMcpContext(context);
 
@@ -275,11 +333,13 @@ export async function playMoonjoyTurn(
       currentPortfolio: null,
       lastTrade: null,
       alreadyTradedThisPhase: false,
+      acceptedTradeCountThisPhase: 0,
+      rejectedTradeCountThisPhase: 0,
       nextRecommendedTools: ["moonjoy_match:action=heartbeat"],
       actions,
       identity,
       match: snapshot,
-      note: "No active match. Agents cannot create invites. Wait for a human to create one.",
+      note: "No active match. Agents cannot create invites. Keep polling with moonjoy_match action=heartbeat every 10-15 seconds. Use your bash tool, client scheduler, or a loop. Your opponent is ready and waiting is losing.",
     };
   }
 
@@ -293,9 +353,12 @@ export async function playMoonjoyTurn(
       currentPortfolio: null,
       lastTrade: null,
       alreadyTradedThisPhase: false,
+      acceptedTradeCountThisPhase: 0,
+      rejectedTradeCountThisPhase: 0,
       nextRecommendedTools: [
         "moonjoy_market:action=dexscreener_search",
         "moonjoy_market:action=validate_candidate",
+        "moonjoy_match:action=mark_ready",
         "moonjoy_match:action=prepare",
         "moonjoy_match:action=heartbeat",
       ],
@@ -314,6 +377,8 @@ export async function playMoonjoyTurn(
       currentPortfolio: null,
       lastTrade: null,
       alreadyTradedThisPhase: false,
+      acceptedTradeCountThisPhase: 0,
+      rejectedTradeCountThisPhase: 0,
       nextRecommendedTools: [
         "moonjoy_match:action=heartbeat",
         "moonjoy_strategy:action=record_decision",
@@ -334,6 +399,8 @@ export async function playMoonjoyTurn(
       currentPortfolio: null,
       lastTrade: null,
       alreadyTradedThisPhase: false,
+      acceptedTradeCountThisPhase: 0,
+      rejectedTradeCountThisPhase: 0,
       nextRecommendedTools: ["moonjoy_match:action=heartbeat"],
       actions,
       identity,
@@ -342,12 +409,10 @@ export async function playMoonjoyTurn(
     };
   }
 
-  const autoTrade = await maybeSubmitLiveAutoTrade(context, snapshot.activeMatch);
-  actions.push(...autoTrade.actions);
+  const snapshot2 = await getActiveMatchSnapshotForMcpContext(context);
 
   let phase: string | null = null;
   let timeRemainingSeconds: number | null = null;
-  let alreadyTradedThisPhase = false;
 
   if (snapshot.activeMatch.liveStartedAt && snapshot.activeMatch.liveEndsAt) {
     const now = new Date();
@@ -358,64 +423,157 @@ export async function playMoonjoyTurn(
       now,
     );
     timeRemainingSeconds = Math.max(0, Math.floor((new Date(snapshot.activeMatch.liveEndsAt).getTime() - now.getTime()) / 1000));
-
-    if (autoTrade.traded) {
-      alreadyTradedThisPhase = false;
-    } else {
-      const supabase = createAdminClient();
-      const { data: existingTrades } = await supabase
-        .from("simulated_trades")
-        .select("id, phase")
-        .eq("match_id", snapshot.activeMatch.id)
-        .eq("agent_id", context.agentId)
-        .eq("status", "accepted")
-        .eq("phase", phase);
-      alreadyTradedThisPhase = (existingTrades?.length ?? 0) > 0;
-    }
   }
 
   let currentPortfolio: Awaited<ReturnType<typeof getMoonjoyPortfolio>> | null = null;
   try { currentPortfolio = await getMoonjoyPortfolio(context); } catch {}
 
-  const recommendedTools = autoTrade.traded
-    ? [
-        "moonjoy_match:action=play_turn",
-        "moonjoy_status:section=portfolio",
-        "moonjoy_status:section=leaderboard",
-        "moonjoy_strategy:action=record_decision",
-      ]
-    : alreadyTradedThisPhase
-      ? [
-          "moonjoy_match:action=play_turn",
-          "moonjoy_market:action=dexscreener_search",
-          "moonjoy_market:action=validate_candidate",
-          "moonjoy_status:section=portfolio",
-        ]
-      : [
-          "moonjoy_market:action=dexscreener_search",
-          "moonjoy_market:action=validate_candidate",
-          "moonjoy_market:action=quote",
-          "moonjoy_market:action=submit_trade",
-          "moonjoy_match:action=play_turn",
-        ];
+  const tradeActivity = phase
+    ? await getLiveTradeActivity(snapshot.activeMatch.id, context.agentId, phase)
+    : null;
+  const acceptedTradeCountThisPhase = tradeActivity?.acceptedTradeCountThisPhase ?? 0;
+  const rejectedTradeCountThisPhase = tradeActivity?.rejectedTradeCountThisPhase ?? 0;
+  const alreadyTradedThisPhase = acceptedTradeCountThisPhase > 0;
+  const note = buildTradeCadenceNote({
+    matchId: snapshot.activeMatch.id,
+    phase,
+    timeRemainingSeconds,
+    acceptedTradeCountThisPhase,
+    rejectedTradeCountThisPhase,
+    lastTrade: tradeActivity?.lastTrade ?? null,
+    currentPortfolio,
+  });
 
   return {
-    status: autoTrade.traded ? "traded" : "no_trade",
+    status: "no_trade",
     phase,
     timeRemainingSeconds,
     currentPortfolio,
-    lastTrade: autoTrade.traded
-      ? { status: "accepted" }
-      : autoTrade.actions.find((a) => a.name.includes("rejected"))
-        ? { status: "rejected", reason: autoTrade.note }
-        : null,
+    lastTrade: tradeActivity?.lastTrade ?? null,
     alreadyTradedThisPhase,
-    nextRecommendedTools: recommendedTools,
+    acceptedTradeCountThisPhase,
+    rejectedTradeCountThisPhase,
+    nextRecommendedTools: [
+      "moonjoy_market:action=dexscreener_search",
+      "moonjoy_market:action=validate_candidate",
+      "moonjoy_market:action=quote",
+      "moonjoy_market:action=submit_trade",
+      "moonjoy_match:action=play_turn",
+    ],
     actions,
     identity,
-    match: autoTrade.match,
-    note: autoTrade.note,
+    match: snapshot2,
+    note,
   };
+}
+
+async function getLiveTradeActivity(
+  matchId: string,
+  agentId: string,
+  phase: string,
+): Promise<{
+  lastTrade: {
+    status: string;
+    reason?: string;
+    tradeSide?: string | null;
+    acceptedAt?: string;
+  } | null;
+  acceptedTradeCountThisPhase: number;
+  rejectedTradeCountThisPhase: number;
+}> {
+  const supabase = createAdminClient();
+  const { data: trades } = await supabase
+    .from("simulated_trades")
+    .select("status, failure_reason, trade_side, accepted_at, phase")
+    .eq("match_id", matchId)
+    .eq("agent_id", agentId)
+    .order("accepted_at", { ascending: false })
+    .limit(25);
+
+  if (!trades || trades.length === 0) {
+    return {
+      lastTrade: null,
+      acceptedTradeCountThisPhase: 0,
+      rejectedTradeCountThisPhase: 0,
+    };
+  }
+
+  const phaseTrades = trades.filter((trade) => trade.phase === phase);
+  const lastTrade = trades[0];
+
+  return {
+    lastTrade: {
+      status: String(lastTrade.status),
+      reason: (lastTrade.failure_reason as string | null) ?? undefined,
+      tradeSide: (lastTrade.trade_side as string | null) ?? null,
+      acceptedAt: String(lastTrade.accepted_at),
+    },
+    acceptedTradeCountThisPhase: phaseTrades.filter((trade) => trade.status === "accepted").length,
+    rejectedTradeCountThisPhase: phaseTrades.filter((trade) => trade.status === "rejected").length,
+  };
+}
+
+function buildTradeCadenceNote(input: {
+  matchId: string;
+  phase: string | null;
+  timeRemainingSeconds: number | null;
+  acceptedTradeCountThisPhase: number;
+  rejectedTradeCountThisPhase: number;
+  lastTrade: {
+    status: string;
+    reason?: string;
+    tradeSide?: string | null;
+    acceptedAt?: string;
+  } | null;
+  currentPortfolio: Awaited<ReturnType<typeof getMoonjoyPortfolio>> | null;
+}): string {
+  const phase = input.phase ?? "live";
+  const cashBalance = input.currentPortfolio?.balances.find((balance) => balance.tokenAddress.toLowerCase() === BASE_USDC_ADDRESS.toLowerCase());
+  const exitablePositions = (input.currentPortfolio?.balances ?? []).filter((balance) => {
+    return balance.tokenAddress.toLowerCase() !== BASE_USDC_ADDRESS.toLowerCase()
+      && balance.exitableAmountBaseUnits !== "0";
+  });
+  const exitableSummary = exitablePositions
+    .slice(0, 3)
+    .map((balance) => `${balance.symbol || balance.tokenAddress.slice(0, 6)} ${balance.exitableAmountHuman}`)
+    .join(", ");
+  const cashSummary = cashBalance
+    ? `Available USDC: ${cashBalance.amountHuman}.`
+    : "Available USDC: 0.";
+
+  if (input.lastTrade?.reason?.includes("Insufficient simulated balance")) {
+    return `Live match ${input.matchId} in phase=${phase}. Last trade was rejected for insufficient simulated balance. ${cashSummary} Size the next buy below available USDC instead of repeating the same amount.`;
+  }
+
+  if (input.lastTrade?.reason?.includes("No exitable balance for tokenIn")) {
+    return `Live match ${input.matchId} in phase=${phase}. Last trade tried to exit a token with no exitable balance. Exitable positions: ${exitableSummary || "none"}. Sell only from current holdings or switch back to a buy.`;
+  }
+
+  if (input.lastTrade?.reason?.includes("Price impact")) {
+    return `Live match ${input.matchId} in phase=${phase}. Last trade exceeded the price impact limit. Reduce size, use a different token, or exit a more liquid position. Exitable positions: ${exitableSummary || "none"}.`;
+  }
+
+  if (phase === "cycle_out") {
+    if (input.lastTrade?.status === "rejected") {
+      return `Live match ${input.matchId} in phase=cycle_out. Last trade was rejected: ${input.lastTrade.reason ?? "unknown reason"}. Do not open new positions now. Exit remaining risk back into USDC only. Exitable positions: ${exitableSummary || "none"}.`;
+    }
+
+    return `Live match ${input.matchId} in phase=cycle_out. Mandatory unwind window: no new positions, no non-USDC rotations. Exit remaining risk back into USDC before settlement. Exitable positions: ${exitableSummary || "none"}.`;
+  }
+
+  if (input.lastTrade?.status === "rejected") {
+    return `Live match ${input.matchId} in phase=${phase}. Last trade was rejected: ${input.lastTrade.reason ?? "unknown reason"}. Adjust the route, token, or size and try again. ${cashSummary} Exitable positions: ${exitableSummary || "none"}. Multiple trades per phase are allowed.`;
+  }
+
+  if (input.acceptedTradeCountThisPhase === 0) {
+    return `Live match ${input.matchId} in phase=${phase}. No accepted trade yet in this phase. Act now: discover, validate, quote, and submit a trade before the window moves. ${cashSummary}`;
+  }
+
+  if ((input.timeRemainingSeconds ?? 0) > 20) {
+    return `Live match ${input.matchId} in phase=${phase}. You already have ${input.acceptedTradeCountThisPhase} accepted trade(s) this phase and may still trade again. Reassess instead of idling; additional trades are allowed while the match stays live. ${cashSummary} Exitable positions: ${exitableSummary || "none"}.`;
+  }
+
+  return `Live match ${input.matchId} in phase=${phase}. Keep trading if a fresh quote supports it. Accepted this phase: ${input.acceptedTradeCountThisPhase}. Rejected this phase: ${input.rejectedTradeCountThisPhase}. ${cashSummary} Exitable positions: ${exitableSummary || "none"}.`;
 }
 
 export async function getMoonjoyPortfolio(
@@ -436,11 +594,14 @@ export async function getMoonjoyPortfolio(
   balances: Array<{
     tokenAddress: string;
     symbol: string;
+    decimals: number;
     amountBaseUnits: string;
+    amountHuman: string;
     valueUsd: number;
     costBasisUsd: number;
     unrealizedPnlUsd: number;
     exitableAmountBaseUnits: string;
+    exitableAmountHuman: string;
     exposurePercent: number;
     suggestedExitToken: string;
   }>;
@@ -480,6 +641,18 @@ export async function getMoonjoyPortfolio(
   const match = activeMatch as Record<string, unknown>;
   const matchId = match.id as string;
   const startingCapital = Number(match.starting_capital_usd);
+
+  if (match.status === "live" || match.status === "settling") {
+    try {
+      await initializeStartingBalances(matchId, context.agentId, startingCapital);
+    } catch (e) {
+      console.error(`[mcp-context] defensive initializeStartingBalances failed`, {
+        matchId,
+        agentId: context.agentId,
+        error: e instanceof Error ? e.message : String(e),
+      });
+    }
+  }
 
   if (match.status === "settled") {
     const { data: lastValuation } = await supabase
@@ -524,6 +697,50 @@ export async function getMoonjoyPortfolio(
 
   const lv = lastVal as Record<string, unknown> | null;
 
+  if (!lv) {
+    const ledgerBalances = await getAllBalances(matchId, context.agentId);
+    const syntheticDetails: BalanceDetail[] = ledgerBalances.map((b) => ({
+      tokenAddress: b.tokenAddress,
+      symbol: b.tokenAddress.toLowerCase() === BASE_USDC_ADDRESS.toLowerCase() ? "USDC" : "",
+      decimals: b.tokenAddress.toLowerCase() === BASE_USDC_ADDRESS.toLowerCase() ? 6 : 18,
+      amountBaseUnits: b.amountBaseUnits,
+      valueUsd: b.tokenAddress.toLowerCase() === BASE_USDC_ADDRESS.toLowerCase()
+        ? Number(b.amountBaseUnits) / 1_000_000
+        : 0,
+      costBasisUsd: b.tokenAddress.toLowerCase() === BASE_USDC_ADDRESS.toLowerCase()
+        ? Number(b.amountBaseUnits) / 1_000_000
+        : 0,
+      unrealizedPnlUsd: 0,
+      exitableAmountBaseUnits: b.amountBaseUnits,
+      exposurePercent: 0,
+      priceSource: "ledger",
+      quoteId: null,
+    }));
+    const currentValueUsd = syntheticDetails.reduce(
+      (sum, balance) => sum + balance.valueUsd,
+      0,
+    );
+
+    return {
+      owner: context.smartAccountAddress,
+      status: "active",
+      startingValueUsd: startingCapital,
+      currentValueUsd,
+      realizedPnlUsd: 0,
+      unrealizedPnlUsd: 0,
+      totalPnlUsd: 0,
+      pnlPercent: 0,
+      penaltiesUsd: 0,
+      penaltyImpactUsd: 0,
+      netScoreUsd: 0,
+      netScorePercent: 0,
+      balances: extractPortfolioBalancesFromDetails(syntheticDetails),
+      message: ledgerBalances.length > 0
+        ? "Live per-match simulated portfolio (awaiting first valuation snapshot). Agents may buy, sell, exit, and rotate quote-backed simulated balances."
+        : "Live per-match simulated portfolio has no ledger balances yet. Starting balance initialization has not completed.",
+    };
+  }
+
   return {
     owner: context.smartAccountAddress,
     status: "active",
@@ -541,7 +758,7 @@ export async function getMoonjoyPortfolio(
     netScorePercent: lv ? Number(lv.net_score_percent) : 0,
     balances: extractPortfolioBalances(lv),
     message:
-      "Live portfolio. Agents may buy, sell, exit, and rotate quote-backed simulated positions; penalties are shown as negative dollar impact.",
+      "Live per-match simulated portfolio. Agents may buy, sell, exit, and rotate quote-backed simulated balances; penalties are shown as negative dollar impact.",
   };
 }
 
@@ -550,57 +767,95 @@ function extractPortfolioBalances(
 ): Array<{
   tokenAddress: string;
   symbol: string;
+  decimals: number;
   amountBaseUnits: string;
+  amountHuman: string;
   valueUsd: number;
   costBasisUsd: number;
   unrealizedPnlUsd: number;
   exitableAmountBaseUnits: string;
+  exitableAmountHuman: string;
   exposurePercent: number;
   suggestedExitToken: string;
 }> {
   const balances = (snapshot?.balances ?? []) as BalanceDetail[];
-  return balances.map((b) => ({
-    tokenAddress: b.tokenAddress,
-    symbol: b.symbol ?? "",
-    amountBaseUnits: b.amountBaseUnits,
-    valueUsd: b.valueUsd ?? 0,
-    costBasisUsd: b.costBasisUsd ?? 0,
-    unrealizedPnlUsd: b.unrealizedPnlUsd ?? 0,
-    exitableAmountBaseUnits: b.exitableAmountBaseUnits ?? b.amountBaseUnits,
-    exposurePercent: b.exposurePercent ?? 0,
-    suggestedExitToken: b.tokenAddress.toLowerCase() === BASE_USDC_ADDRESS.toLowerCase()
-      ? ""
-      : BASE_USDC_ADDRESS.toLowerCase(),
-  }));
+  return extractPortfolioBalancesFromDetails(balances);
+}
+
+function extractPortfolioBalancesFromDetails(
+  balances: BalanceDetail[],
+): Array<{
+  tokenAddress: string;
+  symbol: string;
+  decimals: number;
+  amountBaseUnits: string;
+  amountHuman: string;
+  valueUsd: number;
+  costBasisUsd: number;
+  unrealizedPnlUsd: number;
+  exitableAmountBaseUnits: string;
+  exitableAmountHuman: string;
+  exposurePercent: number;
+  suggestedExitToken: string;
+}> {
+  return balances.map((b) => {
+    const dec = b.decimals ?? 18;
+    return {
+      tokenAddress: b.tokenAddress,
+      symbol: b.symbol ?? "",
+      decimals: dec,
+      amountBaseUnits: b.amountBaseUnits,
+      amountHuman: fromBaseUnits(b.amountBaseUnits, dec),
+      valueUsd: b.valueUsd ?? 0,
+      costBasisUsd: b.costBasisUsd ?? 0,
+      unrealizedPnlUsd: b.unrealizedPnlUsd ?? 0,
+      exitableAmountBaseUnits: b.exitableAmountBaseUnits ?? b.amountBaseUnits,
+      exitableAmountHuman: fromBaseUnits(b.exitableAmountBaseUnits ?? b.amountBaseUnits, dec),
+      exposurePercent: b.exposurePercent ?? 0,
+      suggestedExitToken: b.tokenAddress.toLowerCase() === BASE_USDC_ADDRESS.toLowerCase()
+        ? ""
+        : BASE_USDC_ADDRESS.toLowerCase(),
+    };
+  });
 }
 
 export async function getMoonjoyMarketQuote(
   context: McpRuntimeContext,
-  params?: { tokenIn?: string; tokenOut?: string; amount?: string },
+  params?: { tokenIn?: string; tokenOut?: string; amount?: string; amountInBaseUnits?: string },
 ): Promise<{
   status: "ok" | "no_match" | "error";
   quote?: {
     snapshotId: string;
+    inputAmountHuman: string;
     outputAmount: string;
+    outputAmountHuman: string;
+    tokenInDecimals: number;
+    tokenOutDecimals: number;
     routing: string;
     priceImpactBps: number | null;
     gasEstimate: string | null;
   };
   message: string;
 }> {
-  if (!params?.tokenIn || !params?.tokenOut || !params?.amount) {
+  if (!params?.tokenIn || !params?.tokenOut || (!params?.amount && !params?.amountInBaseUnits)) {
     return {
       status: "no_match",
-      message: "Provide tokenIn, tokenOut, and amount to get a quote.",
+      message: "Provide tokenIn, tokenOut, and amount (human-readable) or amountInBaseUnits to get a quote.",
     };
   }
 
   try {
+    const tokenInDecimals = await getTokenDecimals(params.tokenIn);
+    const tokenOutDecimals = await getTokenDecimals(params.tokenOut);
+
+    const amountBaseUnits = params.amountInBaseUnits ?? toBaseUnits(params.amount!, tokenInDecimals);
+    const inputAmountHuman = params.amount ?? fromBaseUnits(params.amountInBaseUnits!, tokenInDecimals);
+
     const quote = await fetchExactInputQuote({
       swapper: context.smartAccountAddress as `0x${string}`,
       tokenIn: params.tokenIn as `0x${string}`,
       tokenOut: params.tokenOut as `0x${string}`,
-      amountBaseUnits: params.amount,
+      amountBaseUnits,
       slippageBps: 100,
     });
 
@@ -608,12 +863,16 @@ export async function getMoonjoyMarketQuote(
       status: "ok",
       quote: {
         snapshotId: quote.snapshotId,
+        inputAmountHuman,
         outputAmount: quote.outputAmount,
+        outputAmountHuman: fromBaseUnits(quote.outputAmount, tokenOutDecimals),
+        tokenInDecimals,
+        tokenOutDecimals,
         routing: quote.routing,
         priceImpactBps: quote.priceImpactBps,
         gasEstimate: quote.gasEstimate,
       },
-      message: "Fresh Uniswap quote from Base mainnet. Simulated fill only.",
+      message: "Fresh Uniswap quote from Base mainnet. amount/inputAmountHuman are human-readable; outputAmount is base units; outputAmountHuman is human-readable. Simulated fill only.",
     };
   } catch (err) {
     return {
@@ -629,13 +888,16 @@ export async function submitMoonjoyTrade(
     matchId: string;
     tokenIn: string;
     tokenOut: string;
-    amountInBaseUnits: string;
+    amount?: string;
+    amountInBaseUnits?: string;
     quoteSnapshotId?: string;
   },
 ): Promise<{
   status: "accepted" | "rejected";
   tradeId?: string;
+  inputAmountHuman?: string;
   outputAmount?: string;
+  outputAmountHuman?: string;
   routing?: string;
   tradeSide?: Awaited<ReturnType<typeof submitSimulatedTrade>>["tradeSide"];
   tradeLabel?: Awaited<ReturnType<typeof submitSimulatedTrade>>["tradeLabel"];
@@ -645,11 +907,21 @@ export async function submitMoonjoyTrade(
   portfolioAfterTrade?: Awaited<ReturnType<typeof submitSimulatedTrade>>["portfolioAfterTrade"];
   message: string;
 }> {
+  if (!params.amount && !params.amountInBaseUnits) {
+    return { status: "rejected", reason: "Provide amount (human-readable) or amountInBaseUnits.", message: "Provide amount (human-readable) or amountInBaseUnits." };
+  }
+
+  const tokenInDecimals = await getTokenDecimals(params.tokenIn);
+  const tokenOutDecimals = await getTokenDecimals(params.tokenOut);
+
+  const amountInBaseUnits = params.amountInBaseUnits ?? toBaseUnits(params.amount!, tokenInDecimals);
+  const inputAmountHuman = params.amount ?? fromBaseUnits(params.amountInBaseUnits!, tokenInDecimals);
+
   const supabase = createAdminClient();
 
   const { data: match } = await supabase
     .from("matches")
-    .select("creator_agent_id, opponent_agent_id, starting_capital_usd")
+    .select("creator_agent_id, opponent_agent_id")
     .eq("id", params.matchId)
     .single();
 
@@ -675,16 +947,21 @@ export async function submitMoonjoyTrade(
     seat,
     tokenIn: params.tokenIn,
     tokenOut: params.tokenOut,
-    amountInBaseUnits: params.amountInBaseUnits,
-    startingCapitalUsd: Number(matchRow.starting_capital_usd),
+    amountInBaseUnits,
     quoteSnapshotId: params.quoteSnapshotId,
   });
 
+  const outputAmountHuman = result.outputAmount
+    ? fromBaseUnits(result.outputAmount, tokenOutDecimals)
+    : undefined;
+
   return {
     ...result,
+    inputAmountHuman,
+    outputAmountHuman,
     message:
       result.status === "accepted"
-        ? `Simulated ${result.tradeLabel ?? result.tradeSide ?? "trade"} accepted from live Uniswap quote on Base mainnet. portfolioAfterTrade shows value, realized/unrealized PnL, penalty impact, and net score.`
+        ? `Simulated ${result.tradeLabel ?? result.tradeSide ?? "trade"} accepted. Input: ${inputAmountHuman}, output: ${outputAmountHuman ?? "see outputAmount"}. portfolioAfterTrade shows per-match balances, value, PnL, penalty impact, and net score.`
         : `Trade rejected: ${result.reason}`,
   };
 }
@@ -706,170 +983,6 @@ export async function getMoonjoyAllowedTokens(
   matchId: string,
 ) {
   return getActiveTokensForMatch(matchId);
-}
-
-async function maybeSubmitLiveAutoTrade(
-  context: McpRuntimeContext,
-  activeMatch: NonNullable<
-    Awaited<ReturnType<typeof getActiveMatchSnapshotForMcpContext>>["activeMatch"]
-  >,
-): Promise<{
-  traded: boolean;
-  actions: Array<{ name: string; detail?: unknown }>;
-  match: Awaited<ReturnType<typeof getActiveMatchSnapshotForMcpContext>>;
-  note: string;
-}> {
-  const actions: Array<{ name: string; detail?: unknown }> = [];
-
-  const tick = await tickActiveMatch(activeMatch.id, new Date());
-  actions.push({ name: "moonjoy_worker_tick", detail: tick });
-
-  const match = await getActiveMatchSnapshotForMcpContext(context);
-  const liveMatch = match.activeMatch;
-  if (!liveMatch || liveMatch.status !== "live") {
-    return {
-      traded: false,
-      actions,
-      match,
-      note: "Match is no longer live after heartbeat reconciliation.",
-    };
-  }
-
-  if (!liveMatch.liveStartedAt || !liveMatch.liveEndsAt) {
-    return {
-      traded: false,
-      actions,
-      match,
-      note: "Live match is missing timing data.",
-    };
-  }
-
-  const now = new Date();
-  const phase = deriveMatchPhase(
-    "live",
-    new Date(liveMatch.liveStartedAt),
-    new Date(liveMatch.liveEndsAt),
-    now,
-  );
-
-  if (!isTradingAllowed(phase)) {
-    return {
-      traded: false,
-      actions,
-      match,
-      note: `Trading is not allowed in phase ${phase}.`,
-    };
-  }
-
-  const supabase = createAdminClient();
-  const { data: existingTrades } = await supabase
-    .from("simulated_trades")
-    .select("id, phase")
-    .eq("match_id", liveMatch.id)
-    .eq("agent_id", context.agentId)
-    .eq("status", "accepted");
-
-  const trades = (existingTrades ?? []) as Array<{ id: string; phase: string }>;
-  const hasTradeInCurrentPhase = trades.some((trade) => trade.phase === phase);
-  if (hasTradeInCurrentPhase) {
-    return {
-      traded: false,
-      actions,
-      match,
-      note: `Already traded during ${phase}.`,
-    };
-  }
-
-  const tradePlan = await buildAutoTradePlan(liveMatch.id, context.agentId, phase);
-  if (!tradePlan) {
-    return {
-      traded: false,
-      actions,
-      match,
-      note: "No valid auto-trade balance is available yet.",
-    };
-  }
-
-  const result = await submitMoonjoyTrade(context, {
-    matchId: liveMatch.id,
-    tokenIn: tradePlan.tokenIn,
-    tokenOut: tradePlan.tokenOut,
-    amountInBaseUnits: tradePlan.amountInBaseUnits,
-  });
-
-  actions.push({
-    name:
-      result.status === "accepted"
-        ? "moonjoy_market:submit_trade"
-        : "moonjoy_market:submit_trade_rejected",
-    detail: {
-      phase,
-      plan: tradePlan,
-      result,
-    },
-  });
-
-  const updatedMatch = await getActiveMatchSnapshotForMcpContext(context);
-  return {
-    traded: result.status === "accepted",
-    actions,
-    match: updatedMatch,
-    note:
-      result.status === "accepted"
-        ? `Submitted ${phase} auto-trade from live Uniswap quote.`
-        : `Auto-trade was rejected: ${result.reason ?? result.message}`,
-  };
-}
-
-async function buildAutoTradePlan(
-  matchId: string,
-  agentId: string,
-  phase: string,
-): Promise<{
-  tokenIn: string;
-  tokenOut: string;
-  amountInBaseUnits: string;
-} | null> {
-  const balances = await getAllBalances(matchId, agentId);
-  const balanceFor = (tokenAddress: string): bigint => {
-    const balance = balances.find(
-      (entry) => entry.tokenAddress.toLowerCase() === tokenAddress.toLowerCase(),
-    );
-    return BigInt(balance?.amountBaseUnits ?? "0");
-  };
-
-  const usdcBalance = balanceFor(BASE_USDC_ADDRESS);
-  const nonUsdcBalance = balances.find(
-    (entry) =>
-      entry.tokenAddress.toLowerCase() !== BASE_USDC_ADDRESS.toLowerCase() &&
-      BigInt(entry.amountBaseUnits) > BigInt(0),
-  );
-
-  if (nonUsdcBalance && (phase === "closing_window" || usdcBalance < MIN_AUTO_TRADE_USDC_UNITS)) {
-    const heldAmount = BigInt(nonUsdcBalance.amountBaseUnits);
-    const amountIn = phase === "closing_window" ? heldAmount : heldAmount / BigInt(2);
-    if (amountIn > BigInt(0)) {
-      return {
-        tokenIn: nonUsdcBalance.tokenAddress,
-        tokenOut: BASE_USDC_ADDRESS,
-        amountInBaseUnits: amountIn.toString(),
-      };
-    }
-  }
-
-  if (usdcBalance < MIN_AUTO_TRADE_USDC_UNITS) {
-    return null;
-  }
-
-  const amountIn = usdcBalance < DEFAULT_AUTO_TRADE_USDC_UNITS
-    ? usdcBalance
-    : DEFAULT_AUTO_TRADE_USDC_UNITS;
-
-  return {
-    tokenIn: BASE_USDC_ADDRESS,
-    tokenOut: BASE_WETH_ADDRESS,
-    amountInBaseUnits: amountIn.toString(),
-  };
 }
 
 function getNextAllowedActions(

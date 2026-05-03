@@ -14,6 +14,12 @@ export interface UserEnsStatus {
     userOperationHash: string | null;
     submittedAt: string;
   } | null;
+  agentStats: {
+    matchesPlayed: number;
+    streak: number;
+    source: "ens" | "database";
+    syncing: boolean;
+  } | null;
   textRecords: { record_key: string; record_value: string }[];
 }
 

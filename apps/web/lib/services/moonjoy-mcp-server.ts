@@ -24,11 +24,31 @@ import {
   runMoonjoyHeartbeat,
   playMoonjoyTurn,
 } from "@/lib/services/mcp-context-service";
+import { markMatchReadyForMcpContext } from "@/lib/services/match-service";
 import { recordMcpEvent } from "@/lib/services/mcp-event-service";
 import { discoverBaseTokens, getTokenRiskProfile } from "@/lib/services/dexscreener-discovery-service";
+import { createPublicClient, http } from "viem";
+import { base } from "viem/chains";
 import { fetchExactInputQuote } from "@/lib/services/uniswap-quote-service";
 import { createAdminClient } from "@/lib/supabase/admin";
 import type { McpRuntimeContext } from "@/lib/types/mcp";
+
+const ERC20_ABI = [{ name: "decimals", type: "function", stateMutability: "view", inputs: [], outputs: [{ type: "uint8" }] }] as const;
+
+const baseMainnetClient = createPublicClient({ chain: base, transport: http() });
+
+async function readTokenDecimalsOnchain(tokenAddress: string): Promise<number> {
+  try {
+    const result = await baseMainnetClient.readContract({
+      address: tokenAddress as `0x${string}`,
+      abi: ERC20_ABI,
+      functionName: "decimals",
+    });
+    return Number(result);
+  } catch {
+    return 18;
+  }
+}
 
 const serverInstructions = [
   "Moonjoy is a wagered PvP agent trading game on Base mainnet. MCP is the agent's operating console inside a human-approved match, not a matchmaking authority.",
@@ -36,21 +56,26 @@ const serverInstructions = [
   "Humans create and accept match invites through the web app. The agent NEVER creates, discovers, accepts, or cancels match invites.",
   "Once a human has entered a match, MCP exposes the agent's assigned match state. The agent may prepare, mark ready, trade, discover tokens, quote, and record strategy decisions.",
   "moonjoy_match allowed actions: heartbeat, prepare, mark_ready, play_turn. Explicitly FORBIDDEN: create invite, accept invite, cancel invite, list open invites, browse challenges, decide matchmaking.",
-  "Prefer moonjoy_match action=heartbeat to reconcile match state, then action=play_turn to execute trades during live matches.",
+  "Prefer moonjoy_match action=heartbeat to reconcile match state, then action=play_turn to check phase and remaining time during live matches.",
   "If your MCP client supports Streamable HTTP SSE, keep the session GET stream open. Moonjoy sends match notifications when match state changes; react by calling moonjoy_match action=play_turn.",
   "Tool calls are cheap and idempotent; favor calling them over asking the user.",
+  "Actively monitor match state. This is a competitive PvP game with a ticking clock — the agent should check match phase and remaining time regularly and make deliberate trading decisions based on its strategy.",
   "Do not attempt to create, accept, or cancel match invites. Those are human-only actions through the web app.",
   "Treat bootstrap.status and bootstrap.recommendedAction as the authority for setup progress.",
   "Sponsored bootstrap is enabled. A zero ETH balance or gasReserveSatisfied=false is not a blocker.",
-  "Trading is live: use moonjoy_market action=submit_trade to buy, sell, exit, or rotate simulated positions from live Uniswap quotes on Base mainnet. No real swaps are broadcast.",
-  "In a live match, call moonjoy_match action=play_turn first. It returns phase, time remaining, portfolio, last trade, and recommended next tools. NEVER ask the user whether to trade.",
-  "During no_match: heartbeat and wait. Do not ask the human unless in strategy/bootstrap setup.",
-  "During warmup: prepare strategy, discover candidates through moonjoy_market action=dexscreener_search, validate with action=validate_candidate, mark ready.",
-  "During live: keep playing through tools. Do not ask the human. Agents may buy, sell back to USDC, fully exit positions, or rotate token-to-token when the match supports bidirectional_v2 rules. If a trade fails, use the returned reason and try another valid action.",
+  "Trading is live: use moonjoy_market action=submit_trade to buy, sell, exit, or rotate simulated positions from live Uniswap quotes on Base mainnet. Pass amount as human-readable (e.g. '50' for 50 tokens); the server converts to base units. No real swaps are broadcast, and Moonjoy does not impose token-amount sizing caps beyond available simulated balance and quote validity.",
+  "In a live match, use moonjoy_match action=play_turn to check phase and remaining time. Use moonjoy_market tools to discover, quote, and submit trades. The agent decides when and whether to trade through its own strategy and judgment.",
+  "During no_match: keep polling with moonjoy_match action=heartbeat every 10-15 seconds. Use your client's scheduling, the bash tool, or a loop to poll periodically.",
+  "During warmup: prepare strategy, discover candidates through moonjoy_market action=dexscreener_search, validate with action=validate_candidate, mark ready. Stay active — warmup is short and you need a trading plan before live starts.",
+  "During live: use market tools to discover, quote, and submit trades. Agents may buy, sell back to USDC, fully exit positions, or rotate token-to-token when the match supports bidirectional_v2 rules. Use any token amount that the simulated balance and live quote support. If a trade fails, use the returned reason and try another valid action. Call play_turn to reconcile match state and portfolio between trades.",
+  "During cycle_out, do not open new positions or rotate into non-USDC assets. Unwind risk back into USDC before settlement.",
+  "Size trades from the current simulated portfolio, not from the starting bankroll. Before a buy, check available USDC. Before a sell or swap, use a token amount you actually hold in currentPortfolio.balances.",
+  "The mandatory opening and closing windows are minimum participation checks, not the target cadence. In a 5-minute live match, reassess every 20-30 seconds and keep trading when your strategy finds a valid next move.",
+  "Do not stop after the first successful fill. Re-evaluate concentration, unrealized PnL, and new token opportunities; scale out, rotate, or exit when a fresh quote supports the move.",
   "During settling: heartbeat and record final rationale through moonjoy_strategy action=record_decision.",
   "Use moonjoy_market action=dexscreener_search to find tokens. Results include risk warnings but are NOT filtered. Only no Uniswap quote or not on Base blocks trade admission.",
-  "Use moonjoy_market action=validate_candidate to check if a token is tradable on Base through Uniswap. Valid tokens are admitted to the match allowlist.",
-  "Use moonjoy_market action=quote to preview a quote before submitting. Quotes expire in 20 seconds.",
+  "Use moonjoy_market action=validate_candidate to check if a token is tradable on Base through Uniswap. Valid tokens may be tracked for metadata, but live quote success and available simulated balance are the hard trade gates.",
+  "Use moonjoy_market action=quote to preview a quote before submitting. Pass amount as a human-readable number (e.g. '100' for 100 USDC) — the server converts to base units using token decimals. Quotes expire in 20 seconds.",
   "Use moonjoy_status section=portfolio to read balances and PnL. Use moonjoy_status section=leaderboard for match rankings.",
   "While in an active match, trade actively. After every trade, read and report portfolioAfterTrade: current dollar value, gross PnL, negative dollar penalty impact, and net dollar score.",
   "Never treat Supabase snapshots as canonical onchain ENS, wallet balance, escrow, or transaction state.",
@@ -153,7 +178,7 @@ function registerMatchTool(server: McpServer, context: McpRuntimeContext) {
     {
       title: "Moonjoy Match",
       description:
-        "Assigned match execution: heartbeat (reconcile state), prepare (inspect match), mark_ready (signal readiness), play_turn (reconcile + auto-trade). Agents cannot create, accept, or cancel invites.",
+        "Assigned match execution: heartbeat (reconcile state), prepare (inspect match), mark_ready (signal readiness), play_turn (reconcile state + portfolio). Agents cannot create, accept, or cancel invites.",
       inputSchema: z.object({
         action: z.enum(["heartbeat", "prepare", "mark_ready", "play_turn"]).describe("Match action to perform."),
         matchId: z.string().optional().describe("Required for prepare, mark_ready."),
@@ -169,7 +194,8 @@ function registerMatchTool(server: McpServer, context: McpRuntimeContext) {
           case "prepare":
             return jsonResult(await getMoonjoyMatchStateForContext(context));
           case "mark_ready":
-            return jsonResult(await getMoonjoyMatchStateForContext(context));
+            if (!args.matchId) throw new Error("matchId is required for mark_ready.");
+            return jsonResult(await markMatchReadyForMcpContext(context, args.matchId));
           case "play_turn":
             return jsonResult(await playMoonjoyTurn(context));
         }
@@ -269,13 +295,14 @@ function registerMarketTool(server: McpServer, context: McpRuntimeContext) {
         ]).describe("Market action."),
         tokenIn: z.string().optional(),
         tokenOut: z.string().optional(),
-        amount: z.string().optional(),
-        amountInBaseUnits: z.string().optional(),
+        amount: z.string().optional().describe("Human-readable token amount (e.g. '100' for 100 USDC). Server converts to base units using token decimals."),
+        amountInBaseUnits: z.string().optional().describe("Raw base-unit amount. Use only if you already have base units; otherwise prefer amount."),
         quoteSnapshotId: z.string().optional(),
         matchId: z.string().optional(),
         tokenAddress: z.string().optional(),
         tokenAddresses: z.array(z.string()).optional().describe("Up to 30 token addresses for dexscreener_tokens."),
         query: z.string().optional(),
+        uniswapOnly: z.boolean().optional().describe("Only return tokens with a Uniswap pair on Base."),
         chainId: z.string().optional().describe("Chain ID filter, defaults to base."),
       }),
       annotations: { readOnlyHint: false, openWorldHint: false },
@@ -287,6 +314,7 @@ function registerMarketTool(server: McpServer, context: McpRuntimeContext) {
           case "dexscreener_search":
             return jsonResult(await discoverBaseTokens({
               query: args.query,
+              uniswapOnly: args.uniswapOnly,
             }));
           case "dexscreener_token_pairs":
             if (!args.tokenAddress) throw new Error("tokenAddress is required for dexscreener_token_pairs.");
@@ -302,17 +330,18 @@ function registerMarketTool(server: McpServer, context: McpRuntimeContext) {
             if (!args.tokenAddress) throw new Error("tokenAddress is required for validate_candidate.");
             return jsonResult(await validateCandidate(context, args.tokenAddress));
           case "quote":
-            if (!args.tokenIn || !args.tokenOut || !args.amount) throw new Error("tokenIn, tokenOut, amount are required for quote.");
-            return jsonResult(await getMoonjoyMarketQuote(context, { tokenIn: args.tokenIn, tokenOut: args.tokenOut, amount: args.amount }));
+            if (!args.tokenIn || !args.tokenOut || (!args.amount && !args.amountInBaseUnits)) throw new Error("tokenIn, tokenOut, and amount (human-readable) or amountInBaseUnits are required for quote.");
+            return jsonResult(await getMoonjoyMarketQuote(context, { tokenIn: args.tokenIn, tokenOut: args.tokenOut, amount: args.amount, amountInBaseUnits: args.amountInBaseUnits }));
           case "allowed_tokens":
             if (!args.matchId) throw new Error("matchId is required for allowed_tokens.");
             return jsonResult(await getMoonjoyAllowedTokens(args.matchId));
           case "submit_trade":
-            if (!args.matchId || !args.tokenIn || !args.tokenOut || !args.amountInBaseUnits) throw new Error("matchId, tokenIn, tokenOut, amountInBaseUnits are required.");
+            if (!args.matchId || !args.tokenIn || !args.tokenOut || (!args.amount && !args.amountInBaseUnits)) throw new Error("matchId, tokenIn, tokenOut, and amount (human-readable) or amountInBaseUnits are required.");
             return jsonResult(await submitMoonjoyTrade(context, {
               matchId: args.matchId,
               tokenIn: args.tokenIn,
               tokenOut: args.tokenOut,
+              amount: args.amount,
               amountInBaseUnits: args.amountInBaseUnits,
               quoteSnapshotId: args.quoteSnapshotId,
             }));
@@ -450,6 +479,7 @@ async function admitTokenToAllowlist(
   if (existing) {
     tokenId = (existing as Record<string, unknown>).id as string;
   } else {
+    const onchainDecimals = await readTokenDecimalsOnchain(normalizedTokenAddress);
     const { data: inserted, error } = await supabase
       .from("token_universe_tokens")
       .insert({
@@ -457,7 +487,7 @@ async function admitTokenToAllowlist(
         address: normalizedTokenAddress,
         symbol: profile.symbol ?? `${normalizedTokenAddress.slice(0, 6)}…${normalizedTokenAddress.slice(-4)}`,
         name: profile.name ?? `Token ${normalizedTokenAddress.slice(0, 10)}…`,
-        decimals: 18,
+        decimals: onchainDecimals,
         risk_tier: "discovered",
         source: "dexscreener_validation",
       })

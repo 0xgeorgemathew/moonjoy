@@ -7,6 +7,7 @@ import {
   resolveTextRecord,
 } from "@/lib/services/ens-service";
 import { deriveAgentLabel } from "@/lib/services/agent-bootstrap-utils";
+import { getPublicAgentStats } from "@/lib/services/agent-stats-service";
 import { extractEnsLabel } from "@/lib/types/ens";
 import type { Address } from "viem";
 
@@ -60,6 +61,7 @@ export async function GET(request: Request) {
       ? (await resolveAddress(expectedAgent.label))?.toLowerCase() ===
         agent.smart_account_address.toLowerCase()
       : false;
+  const agentStats = await getPublicAgentStats(agent?.id ?? null, agentEnsName);
 
   const pendingAgentTransaction =
     agent?.id && expectedAgentEnsName !== agentEnsName
@@ -96,6 +98,7 @@ export async function GET(request: Request) {
       agentResolvesToSmartWallet,
     }),
     pendingAgentTransaction,
+    agentStats,
     textRecords,
   });
 }

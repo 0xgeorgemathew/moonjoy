@@ -20,6 +20,7 @@ type DexscreenerPair = {
 
 export type DiscoveryFilter = {
   query?: string;
+  uniswapOnly?: boolean;
 };
 
 export type RawDiscoveredToken = {
@@ -39,6 +40,7 @@ export type RawDiscoveredToken = {
   pairAgeHours: number | null;
   boostId: string | null;
   profileLinks: Record<string, string> | null;
+  hasUniswapPair: boolean;
   riskWarnings: string[];
 };
 
@@ -79,6 +81,9 @@ function groupByToken(pairs: DexscreenerPair[]): Map<string, DexscreenerPair[]> 
 
 function selectBestPair(pairs: DexscreenerPair[]): DexscreenerPair | null {
   const sorted = [...pairs].sort((a, b) => {
+    const uniA = a.dexId === "uniswap" ? 1 : 0;
+    const uniB = b.dexId === "uniswap" ? 1 : 0;
+    if (uniB !== uniA) return uniB - uniA;
     const liqA = a.liquidity?.usd ?? 0;
     const liqB = b.liquidity?.usd ?? 0;
     if (liqB !== liqA) return liqB - liqA;
@@ -146,6 +151,10 @@ export async function discoverBaseTokens(
   let warningCount = 0;
 
   for (const [_address, pairs] of grouped) {
+    const hasUniswapPair = pairs.some((p) => p.dexId === "uniswap");
+
+    if (filter.uniswapOnly && !hasUniswapPair) continue;
+
     const best = selectBestPair(pairs);
     if (!best) continue;
 
@@ -173,6 +182,7 @@ export async function discoverBaseTokens(
       pairAgeHours,
       boostId: best.boostId ?? null,
       profileLinks: best.profile?.links ?? null,
+      hasUniswapPair,
       riskWarnings,
     });
   }

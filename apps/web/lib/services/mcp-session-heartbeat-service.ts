@@ -1,5 +1,4 @@
 import { getActiveMatchSnapshotForMcpContext } from "@/lib/services/match-service";
-import { playMoonjoyTurn } from "@/lib/services/mcp-context-service";
 import type { McpRuntimeContext } from "@/lib/types/mcp";
 
 const HEARTBEAT_INTERVAL_MS = 5_000;
@@ -42,13 +41,7 @@ async function reconcileActiveMatch(
   context: McpRuntimeContext,
 ): Promise<void> {
   try {
-    const snapshot = await getActiveMatchSnapshotForMcpContext(context);
-
-    const shouldAutoPlay = snapshot.activeMatch?.status === "live";
-
-    if (shouldAutoPlay) {
-      await playMoonjoyTurn(context);
-    }
+    await getActiveMatchSnapshotForMcpContext(context);
   } catch (error) {
     console.error("[mcp] Heartbeat failed to reconcile active match", {
       sessionId,
