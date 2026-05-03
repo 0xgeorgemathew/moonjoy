@@ -336,6 +336,7 @@ async function settleMatchFromWorker(
       winner_seat: result.winnerSeat,
       winner_agent_id: result.winnerAgentId,
       result_summary: {
+        scoreMetric: "net_normalized_pnl_percent",
         outcome: result.outcome,
         winnerSeat: result.winnerSeat,
         spreadUsd: result.spreadUsd,
@@ -344,6 +345,7 @@ async function settleMatchFromWorker(
           currentValueUsd: creatorValuation.currentValueUsd,
           usdcBalanceUsd: creatorValuation.usdcBalanceUsd,
           totalPnlUsd: creatorValuation.totalPnlUsd,
+          pnlPercent: creatorValuation.pnlPercent,
           netScorePercent: creatorValuation.netScorePercent,
           penaltiesUsd: creatorPenalties,
         },
@@ -351,6 +353,7 @@ async function settleMatchFromWorker(
           currentValueUsd: opponentValuation.currentValueUsd,
           usdcBalanceUsd: opponentValuation.usdcBalanceUsd,
           totalPnlUsd: opponentValuation.totalPnlUsd,
+          pnlPercent: opponentValuation.pnlPercent,
           netScorePercent: opponentValuation.netScorePercent,
           penaltiesUsd: opponentPenalties,
         },

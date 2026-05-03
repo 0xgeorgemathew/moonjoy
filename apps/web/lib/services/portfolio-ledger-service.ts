@@ -1,6 +1,10 @@
 import { computePnlBreakdown, computeMaxDrawdownPercent } from "@moonjoy/game";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { fetchValuationQuote } from "@/lib/services/uniswap-quote-service";
+import {
+  getOpenPositions,
+  getTotalRealizedPnl as getLotRealizedPnl,
+} from "@/lib/services/lot-service";
 
 const USDC_ADDRESS = "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913";
 const ZERO = BigInt(0);
@@ -16,6 +20,10 @@ export type BalanceDetail = {
   decimals: number;
   amountBaseUnits: string;
   valueUsd: number;
+  costBasisUsd: number;
+  unrealizedPnlUsd: number;
+  exitableAmountBaseUnits: string;
+  exposurePercent: number;
   priceSource: string;
   quoteId: string | null;
 };
@@ -43,21 +51,30 @@ export async function initializeStartingBalances(
   agentId: string,
   startingCapitalUsd: number,
 ): Promise<void> {
+  if (!Number.isFinite(startingCapitalUsd) || startingCapitalUsd <= 0) {
+    throw new Error("Starting capital must be greater than zero.");
+  }
+
   const supabase = createAdminClient();
 
-  const { data: existing } = await supabase
+  const { data: existing, error: existingError } = await supabase
     .from("portfolio_ledger_entries")
     .select("id")
     .eq("match_id", matchId)
     .eq("agent_id", agentId)
     .eq("entry_type", "starting_balance")
-    .maybeSingle();
+    .order("created_at", { ascending: true })
+    .limit(1);
 
-  if (existing) return;
+  if (existingError) {
+    throw new Error(`Failed to inspect starting balance: ${existingError.message}`);
+  }
+
+  if (existing && existing.length > 0) return;
 
   const usdcUnits = BigInt(Math.round(startingCapitalUsd * 1_000_000));
 
-  await supabase.from("portfolio_ledger_entries").insert({
+  const { error } = await supabase.from("portfolio_ledger_entries").insert({
     match_id: matchId,
     agent_id: agentId,
     entry_type: "starting_balance",
@@ -66,6 +83,10 @@ export async function initializeStartingBalances(
     value_usd: startingCapitalUsd,
     metadata: { source: "match_start" },
   });
+
+  if (error && error.code !== "23505") {
+    throw new Error(`Failed to initialize starting balance: ${error.message}`);
+  }
 }
 
 export async function getTokenBalance(
@@ -76,26 +97,36 @@ export async function getTokenBalance(
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("portfolio_ledger_entries")
-    .select("token_address, amount_base_units, entry_type")
+    .select("id, token_address, amount_base_units, entry_type")
     .eq("match_id", matchId)
     .eq("agent_id", agentId)
-    .not("token_address", "is", null);
+    .not("token_address", "is", null)
+    .order("created_at", { ascending: true });
 
   if (error || !data) return "0";
 
   const normalized = tokenAddress.toLowerCase();
   let balance = ZERO;
+  const countedStartingTokens = new Set<string>();
   for (const entry of data as Array<{
+    id: string;
     token_address?: string;
     amount_base_units: string;
     entry_type: string;
   }>) {
-    if (entry.token_address?.toLowerCase() !== normalized) {
+    const token = entry.token_address?.toLowerCase();
+    if (token !== normalized) {
       continue;
     }
 
     const amount = BigInt(entry.amount_base_units);
-    if (entry.entry_type === "trade_credit" || entry.entry_type === "starting_balance") {
+    if (entry.entry_type === "starting_balance") {
+      if (countedStartingTokens.has(token)) {
+        continue;
+      }
+      countedStartingTokens.add(token);
+      balance += amount;
+    } else if (entry.entry_type === "trade_credit") {
       balance += amount;
     } else if (entry.entry_type === "trade_debit") {
       balance -= amount;
@@ -112,15 +143,18 @@ export async function getAllBalances(
   const supabase = createAdminClient();
   const { data, error } = await supabase
     .from("portfolio_ledger_entries")
-    .select("token_address, amount_base_units, entry_type")
+    .select("id, token_address, amount_base_units, entry_type")
     .eq("match_id", matchId)
     .eq("agent_id", agentId)
-    .not("token_address", "is", null);
+    .not("token_address", "is", null)
+    .order("created_at", { ascending: true });
 
   if (error || !data) return [];
 
   const balances = new Map<string, bigint>();
+  const countedStartingTokens = new Set<string>();
   for (const entry of data as Array<{
+    id: string;
     token_address: string;
     amount_base_units: string;
     entry_type: string;
@@ -128,7 +162,13 @@ export async function getAllBalances(
     const token = entry.token_address.toLowerCase();
     const amount = BigInt(entry.amount_base_units);
     const current = balances.get(token) ?? ZERO;
-    if (entry.entry_type === "trade_credit" || entry.entry_type === "starting_balance") {
+    if (entry.entry_type === "starting_balance") {
+      if (countedStartingTokens.has(token)) {
+        continue;
+      }
+      countedStartingTokens.add(token);
+      balances.set(token, current + amount);
+    } else if (entry.entry_type === "trade_credit") {
       balances.set(token, current + amount);
     } else if (entry.entry_type === "trade_debit") {
       balances.set(token, current - amount);
@@ -220,6 +260,24 @@ export async function getRealizedPnl(
   agentId: string,
 ): Promise<number> {
   const supabase = createAdminClient();
+  const { data: match } = await supabase
+    .from("matches")
+    .select("trade_rules_version")
+    .eq("id", matchId)
+    .maybeSingle();
+
+  if ((match as { trade_rules_version?: string } | null)?.trade_rules_version === "bidirectional_v2") {
+    return getLotRealizedPnl(matchId, agentId);
+  }
+
+  return getLegacyRealizedPnl(matchId, agentId);
+}
+
+async function getLegacyRealizedPnl(
+  matchId: string,
+  agentId: string,
+): Promise<number> {
+  const supabase = createAdminClient();
   const { data } = await supabase
     .from("portfolio_ledger_entries")
     .select("value_usd, entry_type")
@@ -252,6 +310,8 @@ export async function computeValuation(
   const balances = await getAllBalances(matchId, agentId);
   const penaltiesUsd = await getTotalPenalties(matchId, agentId);
   const realizedPnlUsd = await getRealizedPnl(matchId, agentId);
+  const openPositions = await getOpenPositions(matchId, agentId);
+  const positionMap = new Map(openPositions.map((p) => [p.tokenAddress.toLowerCase(), p]));
 
   let currentValueUsd = 0;
   let usdcBalanceUsd = 0;
@@ -271,6 +331,10 @@ export async function computeValuation(
         decimals: 6,
         amountBaseUnits: balance.amountBaseUnits,
         valueUsd: usdcAmount,
+        costBasisUsd: usdcAmount,
+        unrealizedPnlUsd: 0,
+        exitableAmountBaseUnits: balance.amountBaseUnits,
+        exposurePercent: 0,
         priceSource: "native",
         quoteId: null,
       });
@@ -288,6 +352,8 @@ export async function computeValuation(
     if (quote) {
       quoteSnapshotIds.push(quote.snapshotId);
       const valUsd = Number(quote.outputAmount) / 1_000_000;
+      const position = positionMap.get(balance.tokenAddress.toLowerCase());
+      const costBasisUsd = position?.costBasisUsd ?? 0;
       currentValueUsd += valUsd;
       balanceDetails.push({
         tokenAddress: balance.tokenAddress,
@@ -295,6 +361,10 @@ export async function computeValuation(
         decimals: info?.decimals ?? 18,
         amountBaseUnits: balance.amountBaseUnits,
         valueUsd: valUsd,
+        costBasisUsd,
+        unrealizedPnlUsd: valUsd - costBasisUsd,
+        exitableAmountBaseUnits: position?.exitableAmountBaseUnits ?? balance.amountBaseUnits,
+        exposurePercent: 0,
         priceSource: "uniswap_quote",
         quoteId: quote.snapshotId,
       });
@@ -307,11 +377,17 @@ export async function computeValuation(
           decimals: info?.decimals ?? 18,
           amountBaseUnits: balance.amountBaseUnits,
           valueUsd: 0,
+          costBasisUsd: positionMap.get(balance.tokenAddress.toLowerCase())?.costBasisUsd ?? 0,
+          unrealizedPnlUsd: -(positionMap.get(balance.tokenAddress.toLowerCase())?.costBasisUsd ?? 0),
+          exitableAmountBaseUnits: positionMap.get(balance.tokenAddress.toLowerCase())?.exitableAmountBaseUnits ?? balance.amountBaseUnits,
+          exposurePercent: 0,
           priceSource: "none",
           quoteId: null,
         });
       } else {
         const lastValue = await getLastKnownValue(matchId, agentId, balance.tokenAddress);
+        const position = positionMap.get(balance.tokenAddress.toLowerCase());
+        const costBasisUsd = position?.costBasisUsd ?? 0;
         currentValueUsd += lastValue;
         balanceDetails.push({
           tokenAddress: balance.tokenAddress,
@@ -319,11 +395,19 @@ export async function computeValuation(
           decimals: info?.decimals ?? 18,
           amountBaseUnits: balance.amountBaseUnits,
           valueUsd: lastValue,
+          costBasisUsd,
+          unrealizedPnlUsd: lastValue - costBasisUsd,
+          exitableAmountBaseUnits: position?.exitableAmountBaseUnits ?? balance.amountBaseUnits,
+          exposurePercent: 0,
           priceSource: "last_known",
           quoteId: null,
         });
       }
     }
+  }
+
+  for (const detail of balanceDetails) {
+    detail.exposurePercent = currentValueUsd > 0 ? detail.valueUsd / currentValueUsd : 0;
   }
 
   const breakdown = computePnlBreakdown(

@@ -9,6 +9,7 @@ type TradeRequestBody = {
   tokenIn: string;
   tokenOut: string;
   amountInBaseUnits: string;
+  quoteSnapshotId?: string;
 };
 
 export async function POST(
@@ -79,6 +80,7 @@ export async function POST(
       tokenOut: body.tokenOut,
       amountInBaseUnits: body.amountInBaseUnits,
       startingCapitalUsd: Number(matchRow.starting_capital_usd),
+      quoteSnapshotId: body.quoteSnapshotId,
     });
 
     return NextResponse.json(result);

@@ -3,10 +3,17 @@ import {
   deriveMatchPhase,
   MIN_TRADE_USD,
   MAX_TRADE_PORTFOLIO_PERCENT,
+  isWithinExposureCap,
+  RISK_POLICIES,
+  classifyTradeSide,
+  deriveTradeLabel,
+  type RiskTier,
+  type TradeSide,
 } from "@moonjoy/game";
 import { createAdminClient } from "@/lib/supabase/admin";
 import {
   fetchExactInputQuote,
+  getStoredExactInputQuote,
   validateQuoteForSimulatedFill,
   type ValidatedQuote,
   UniswapQuoteError,
@@ -33,12 +40,18 @@ export type SubmitTradeInput = {
   tokenOut: string;
   amountInBaseUnits: string;
   startingCapitalUsd: number;
+  quoteSnapshotId?: string;
 };
 
 export type TradeResult = {
   status: "accepted" | "rejected";
   tradeId?: string;
   reason?: string;
+  retryable?: boolean;
+  tradeSide?: TradeSide;
+  tradeLabel?: "buy" | "sell" | "swap" | "exit";
+  realizedPnlUsd?: number;
+  closedCostBasisUsd?: number;
   outputAmount?: string;
   routing?: string;
   priceImpactBps?: number | null;
@@ -56,17 +69,28 @@ export async function submitSimulatedTrade(
   const normalizedTokenOut = input.tokenOut.toLowerCase();
 
   if (normalizedTokenIn === normalizedTokenOut) {
-    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, "tokenIn and tokenOut must be different.", undefined, "rejected");
+    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, "tokenIn and tokenOut must be different.", undefined, "rejected", undefined, false);
   }
 
   const { data: match } = await supabase
     .from("matches")
-    .select("id, status, live_started_at, live_ends_at, starting_capital_usd, creator_agent_id, opponent_agent_id")
+    .select("id, status, live_started_at, live_ends_at, starting_capital_usd, creator_agent_id, opponent_agent_id, trade_rules_version")
     .eq("id", input.matchId)
     .single();
 
   if (!match) {
-    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, "Match not found.", undefined, "unknown");
+    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, "Match not found.", undefined, "unknown", undefined, false);
+  }
+
+  const tradeRulesVersion = String((match as Record<string, unknown>).trade_rules_version ?? "buy_only_v1");
+  const tradeSide = classifyTradeSide({
+    tokenIn: normalizedTokenIn,
+    tokenOut: normalizedTokenOut,
+    usdcAddress: USDC,
+  });
+
+  if (!tradeSide) {
+    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, "Invalid trade: USDC to USDC is not allowed.", undefined, "rejected", undefined, false);
   }
 
   const now = new Date();
@@ -78,62 +102,119 @@ export async function submitSimulatedTrade(
   );
 
   if (!isTradingAllowed(phase)) {
-    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, `Trading is not allowed in phase ${phase}.`, undefined, phase);
+    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, `Trading is not allowed in phase ${phase}.`, undefined, phase, tradeSide);
   }
 
-  const tokenInAllowed = await isTokenAllowedForMatch(input.matchId, normalizedTokenIn);
-  const tokenOutAllowed = await isTokenAllowedForMatch(input.matchId, normalizedTokenOut);
-  if (!tokenInAllowed || !tokenOutAllowed) {
-    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, "One or both tokens are not in the match allowlist.", undefined, phase);
+  if (tradeRulesVersion === "buy_only_v1" && tradeSide !== "buy") {
+    return persistAndReject(
+      supabase,
+      input,
+      normalizedTokenIn,
+      normalizedTokenOut,
+      "Buy-only v1 match: only USDC-funded buys are allowed.",
+      undefined,
+      phase,
+      tradeSide,
+      false,
+    );
   }
+
+  const balance = await getTokenBalance(input.matchId, input.agentId, normalizedTokenIn);
+  const tradeLabel = deriveTradeLabel({
+    tradeSide,
+    currentBalanceBaseUnits: balance,
+    amountInBaseUnits: input.amountInBaseUnits,
+  });
 
   const tokens = await getActiveTokensForMatch(input.matchId);
-  const isBuy = normalizedTokenIn === USDC.toLowerCase();
-  const riskTierToken = isBuy
-    ? getTokenRiskTier(tokens, normalizedTokenOut)
-    : getTokenRiskTier(tokens, normalizedTokenIn);
-  if (!riskTierToken) {
-    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, "Cannot determine risk tier for trade token.", undefined, phase);
+
+  const tokenInAllowed =
+    normalizedTokenIn === USDC.toLowerCase() ||
+    await isTokenAllowedForMatch(input.matchId, normalizedTokenIn);
+  const tokenOutAllowed =
+    normalizedTokenOut === USDC.toLowerCase() ||
+    await isTokenAllowedForMatch(input.matchId, normalizedTokenOut);
+
+  if (tradeSide === "buy" && (!tokenInAllowed || !tokenOutAllowed)) {
+    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, "Buy token is not in the active match allowlist.", undefined, phase, tradeSide);
   }
 
+  if (tradeSide === "sell" && normalizedTokenOut !== USDC.toLowerCase()) {
+    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, "Sell trades must output USDC.", undefined, phase, tradeSide, false);
+  }
+
+  if (tradeSide === "swap" && !tokenOutAllowed) {
+    return persistAndReject(
+      supabase,
+      input,
+      normalizedTokenIn,
+      normalizedTokenOut,
+      "Swap output token is not in the active match allowlist.",
+      undefined,
+      phase,
+      tradeSide,
+    );
+  }
+
+  if (tradeSide !== "buy" && BigInt(balance) <= BigInt(0)) {
+    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, "No exitable balance for tokenIn.", undefined, phase, tradeSide, false);
+  }
+
+  const riskAddress = tradeSide === "sell" ? normalizedTokenIn : normalizedTokenOut;
+  const riskTierToken: RiskTier = getTokenRiskTier(tokens, riskAddress) ?? "discovered";
   const slippageBps = getSlippageBps(riskTierToken);
   const maxPriceImpact = getMaxPriceImpactBps(riskTierToken);
 
   if (BigInt(input.amountInBaseUnits) <= BigInt(0)) {
-    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, "Trade amount must be positive.", undefined, phase);
+    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, "Trade amount must be positive.", undefined, phase, tradeSide, false);
   }
 
-  const balance = await getTokenBalance(input.matchId, input.agentId, normalizedTokenIn);
   if (BigInt(balance) < BigInt(input.amountInBaseUnits)) {
-    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, "Insufficient simulated balance.", undefined, phase);
+    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, "Insufficient simulated balance.", undefined, phase, tradeSide, false);
   }
 
-  const tradeValueUsd = await estimateTradeValueUsd(
-    normalizedTokenIn,
-    input.amountInBaseUnits,
+  const currentPortfolio = await computeValuation(
+    input.matchId,
+    input.agentId,
+    phase,
+    Number(match.starting_capital_usd),
     input.smartAccountAddress,
   );
 
-  if (tradeValueUsd < MIN_TRADE_USD) {
-    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, `Trade value $${tradeValueUsd.toFixed(2)} is below minimum $${MIN_TRADE_USD}.`, undefined, phase);
-  }
-
-  if (tradeValueUsd > input.startingCapitalUsd * (MAX_TRADE_PORTFOLIO_PERCENT / 100)) {
-    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, `Trade value exceeds ${MAX_TRADE_PORTFOLIO_PERCENT}% of portfolio.`, undefined, phase);
-  }
-
   let quote: ValidatedQuote;
   try {
-    quote = await fetchExactInputQuote({
-      swapper: input.smartAccountAddress as `0x${string}`,
-      tokenIn: normalizedTokenIn as `0x${string}`,
-      tokenOut: normalizedTokenOut as `0x${string}`,
-      amountBaseUnits: input.amountInBaseUnits,
-      slippageBps,
-    });
+    const storedQuote = input.quoteSnapshotId
+      ? await getStoredExactInputQuote({
+          snapshotId: input.quoteSnapshotId,
+          swapper: input.smartAccountAddress as `0x${string}`,
+          tokenIn: normalizedTokenIn as `0x${string}`,
+          tokenOut: normalizedTokenOut as `0x${string}`,
+          amountBaseUnits: input.amountInBaseUnits,
+        })
+      : null;
+
+    quote =
+      storedQuote ??
+      (await fetchExactInputQuote({
+        swapper: input.smartAccountAddress as `0x${string}`,
+        tokenIn: normalizedTokenIn as `0x${string}`,
+        tokenOut: normalizedTokenOut as `0x${string}`,
+        amountBaseUnits: input.amountInBaseUnits,
+        slippageBps,
+      }));
   } catch (err) {
     const detail = err instanceof UniswapQuoteError && err.details ? ` ${err.details}` : "";
-    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, `Quote failed: ${err instanceof Error ? err.message : "Unexpected"}${detail}`, undefined, phase);
+    return persistAndReject(
+      supabase,
+      input,
+      normalizedTokenIn,
+      normalizedTokenOut,
+      `Quote failed: ${err instanceof Error ? err.message : "Unexpected"}${detail}`,
+      undefined,
+      phase,
+      tradeSide,
+      isRetryableQuoteError(err),
+    );
   }
 
   const validationError = validateQuoteForSimulatedFill(quote, {
@@ -143,21 +224,76 @@ export async function submitSimulatedTrade(
   });
 
   if (validationError) {
-    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, validationError.reason, quote.snapshotId, phase);
+    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, validationError.reason, quote.snapshotId, phase, tradeSide);
   }
 
-  const outputValueUsd = await estimateTradeValueUsd(
-    normalizedTokenOut,
-    quote.outputAmount,
-    input.smartAccountAddress,
-  );
+  const tradeValues = await estimateTradeValuesUsd({
+    tradeSide,
+    tokenIn: normalizedTokenIn,
+    amountInBaseUnits: input.amountInBaseUnits,
+    tokenOut: normalizedTokenOut,
+    amountOutBaseUnits: quote.outputAmount,
+    swapperAddress: input.smartAccountAddress,
+  });
+  if (!tradeValues) {
+    return persistAndReject(
+      supabase,
+      input,
+      normalizedTokenIn,
+      normalizedTokenOut,
+      "Trade could not be valued in USDC.",
+      quote.snapshotId,
+      phase,
+      tradeSide,
+    );
+  }
+  const { inputValueUsd, outputValueUsd } = tradeValues;
+  const fullExit = BigInt(input.amountInBaseUnits) >= BigInt(balance);
+
+  if ((tradeSide === "buy" || (tradeSide === "swap" && !fullExit)) && inputValueUsd < MIN_TRADE_USD) {
+    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, `Trade value $${inputValueUsd.toFixed(2)} is below minimum $${MIN_TRADE_USD}.`, quote.snapshotId, phase, tradeSide);
+  }
+
+  if ((tradeSide === "buy" || tradeSide === "swap") && inputValueUsd > input.startingCapitalUsd * (MAX_TRADE_PORTFOLIO_PERCENT / 100)) {
+    return persistAndReject(supabase, input, normalizedTokenIn, normalizedTokenOut, `Trade value exceeds ${MAX_TRADE_PORTFOLIO_PERCENT}% of portfolio.`, quote.snapshotId, phase, tradeSide);
+  }
+
+  if (tradeSide === "buy" || tradeSide === "swap") {
+    const currentExposureBaseUnits = await getTokenBalance(input.matchId, input.agentId, normalizedTokenOut);
+    const currentExposureUsd = await estimateTradeValueUsd(
+      normalizedTokenOut,
+      currentExposureBaseUnits,
+      input.smartAccountAddress,
+    );
+    const positionLimitPercent = RISK_POLICIES[riskTierToken].maxPositionPercent;
+
+    if (!isWithinExposureCap({
+      currentExposureUsd,
+      tradeValueUsd: outputValueUsd,
+      portfolioValueUsd: currentPortfolio.currentValueUsd,
+      maxPositionPercent: positionLimitPercent,
+      increasesExposure: true,
+    })) {
+      return persistAndReject(
+        supabase,
+        input,
+        normalizedTokenIn,
+        normalizedTokenOut,
+        `Trade would exceed ${positionLimitPercent}% exposure cap for ${riskTierToken} tokens.`,
+        quote.snapshotId,
+        phase,
+        tradeSide,
+      );
+    }
+  }
 
   const tradeId = crypto.randomUUID();
   const acceptedAt = now.toISOString();
 
-  const { data: rpcResult, error: rpcError } = await supabase.rpc(
-    "accept_simulated_trade",
-    {
+  const rpcName = tradeRulesVersion === "bidirectional_v2"
+    ? "accept_bidirectional_trade"
+    : "accept_simulated_trade";
+  const baseRpcArgs = {
       p_trade_id: tradeId,
       p_match_id: input.matchId,
       p_agent_id: input.agentId,
@@ -170,15 +306,20 @@ export async function submitSimulatedTrade(
       p_simulated_amount_out: quote.outputAmount,
       p_slippage_bps: 0,
       p_quote_snapshot_id: quote.snapshotId,
-      p_input_value_usd: tradeValueUsd,
+      p_input_value_usd: inputValueUsd,
       p_output_value_usd: outputValueUsd,
       p_accepted_at: acceptedAt,
-    },
-  );
+  };
+  const rpcArgs = rpcName === "accept_bidirectional_trade"
+    ? { ...baseRpcArgs, p_trade_side: tradeLabel }
+    : baseRpcArgs;
+
+  const { data: rpcResult, error: rpcError } = await supabase.rpc(rpcName, rpcArgs);
 
   if (rpcError || (rpcResult as Record<string, unknown>)?.status === "rejected") {
     const reason = rpcError?.message ?? ((rpcResult as Record<string, unknown>)?.reason as string) ?? "Atomic trade write failed.";
-    return { status: "rejected", reason, tradeId };
+    const retryable = ((rpcResult as Record<string, unknown>)?.retryable as boolean | undefined) ?? false;
+    return { status: "rejected", reason, tradeId, retryable, tradeSide, tradeLabel };
   }
 
   const portfolioAfterTrade = await computeValuation(
@@ -202,6 +343,10 @@ export async function submitSimulatedTrade(
   return {
     status: "accepted",
     tradeId,
+    tradeSide,
+    tradeLabel,
+    realizedPnlUsd: Number((rpcResult as Record<string, unknown>)?.realizedPnlUsd ?? 0),
+    closedCostBasisUsd: Number((rpcResult as Record<string, unknown>)?.closedCostBasisUsd ?? 0),
     outputAmount: quote.outputAmount,
     routing: quote.routing,
     priceImpactBps: quote.priceImpactBps,
@@ -218,6 +363,8 @@ async function persistAndReject(
   reason: string,
   quoteSnapshotId?: string,
   phase?: string,
+  tradeSide?: TradeSide,
+  retryable = true,
 ): Promise<TradeResult> {
   const tradeId = crypto.randomUUID();
   try { await supabase.from("simulated_trades").insert({
@@ -235,9 +382,11 @@ async function persistAndReject(
     quote_snapshot_id: quoteSnapshotId ?? null,
     status: "rejected",
     failure_reason: reason,
+    trade_side: tradeSide ?? null,
+    retryable,
     accepted_at: new Date().toISOString(),
   }); } catch {}
-  return { status: "rejected", reason, tradeId };
+  return { status: "rejected", reason, tradeId, tradeSide, retryable };
 }
 
 async function broadcastTradeUpdate(input: {
@@ -323,6 +472,45 @@ async function estimateTradeValueUsd(
   } catch {
     return 0;
   }
+}
+
+async function estimateTradeValuesUsd(params: {
+  tradeSide: TradeSide;
+  tokenIn: string;
+  amountInBaseUnits: string;
+  tokenOut: string;
+  amountOutBaseUnits: string;
+  swapperAddress: string;
+}): Promise<{ inputValueUsd: number; outputValueUsd: number } | null> {
+  if (params.tradeSide === "buy") {
+    const inputValueUsd = Number(params.amountInBaseUnits) / 1_000_000;
+    return { inputValueUsd, outputValueUsd: inputValueUsd };
+  }
+
+  if (params.tokenOut.toLowerCase() === USDC.toLowerCase()) {
+    const outputValueUsd = Number(params.amountOutBaseUnits) / 1_000_000;
+    return { inputValueUsd: outputValueUsd, outputValueUsd };
+  }
+
+  const inputValueUsd = await estimateTradeValueUsd(
+    params.tokenIn,
+    params.amountInBaseUnits,
+    params.swapperAddress,
+  );
+
+  if (inputValueUsd <= 0) {
+    return null;
+  }
+
+  return { inputValueUsd, outputValueUsd: inputValueUsd };
+}
+
+function isRetryableQuoteError(error: unknown): boolean {
+  if (!(error instanceof UniswapQuoteError)) {
+    return true;
+  }
+
+  return error.statusCode === 408 || error.statusCode === 429 || error.statusCode >= 500;
 }
 
 export async function getTradeHistoryForMatch(

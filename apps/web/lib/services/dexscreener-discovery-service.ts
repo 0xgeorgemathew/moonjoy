@@ -216,8 +216,8 @@ export async function getTokenRiskProfile(
     .eq("is_active", true)
     .maybeSingle();
 
-  const symbol = existing ? (existing as Record<string, unknown>).symbol as string : null;
-  const name = existing ? (existing as Record<string, unknown>).name as string : null;
+  let symbol = existing ? (existing as Record<string, unknown>).symbol as string : null;
+  let name = existing ? (existing as Record<string, unknown>).name as string : null;
   const riskTier = existing ? (existing as Record<string, unknown>).risk_tier as RiskTier : null;
 
   const pairData = await fetchDexscreener(
@@ -230,6 +230,24 @@ export async function getTokenRiskProfile(
     pairs = (pairData.pairs as DexscreenerPair[] | undefined) ?? [];
   }
   const best = selectBestPair(pairs);
+
+  // Dexscreener always has the actual symbol — use it when DB is missing or "UNKNOWN"
+  if (best && (!symbol || symbol === "UNKNOWN")) {
+    symbol = best.baseToken.symbol || null;
+  }
+  if (best && (!name || name === "Unknown Token")) {
+    name = best.baseToken.name || null;
+  }
+
+  // If we resolved a better symbol from Dexscreener, update the stale DB row
+  if (symbol && existing && ((existing as Record<string, unknown>).symbol as string) === "UNKNOWN") {
+    const supabase2 = createAdminClient();
+    await supabase2
+      .from("token_universe_tokens")
+      .update({ symbol, name: name ?? null })
+      .eq("chain_id", BASE_CHAIN_ID)
+      .eq("address", tokenAddress);
+  }
 
   if (best) {
     const riskWarnings = computeWarnings(best);

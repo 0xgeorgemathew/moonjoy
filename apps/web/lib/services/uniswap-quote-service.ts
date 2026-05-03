@@ -91,7 +91,13 @@ async function callUniswapQuote(
     body: JSON.stringify(payload),
   });
 
-  const data = (await response.json()) as Record<string, unknown>;
+  const responseText = await response.text();
+  let data: Record<string, unknown>;
+  try {
+    data = JSON.parse(responseText) as Record<string, unknown>;
+  } catch {
+    data = { message: responseText };
+  }
 
   if (!response.ok) {
     throw new UniswapQuoteError(
@@ -236,6 +242,58 @@ export async function fetchExactInputQuote(
     responsePayload: sanitizedResponse,
     snapshotId,
     fetchedAt: now.toISOString(),
+  };
+}
+
+export async function getStoredExactInputQuote(params: {
+  snapshotId: string;
+  swapper: `0x${string}`;
+  tokenIn: `0x${string}`;
+  tokenOut: `0x${string}`;
+  amountBaseUnits: string;
+}): Promise<ValidatedQuote | null> {
+  const supabase = createAdminClient();
+  const { data, error } = await supabase
+    .from("quote_snapshots")
+    .select("*")
+    .eq("id", params.snapshotId)
+    .eq("source", "uniswap")
+    .eq("chain_id", BASE_CHAIN_ID)
+    .maybeSingle();
+
+  if (error || !data) {
+    return null;
+  }
+
+  const row = data as Record<string, unknown>;
+  const requestPayload = row.request_payload as Record<string, unknown> | null;
+  const responsePayload = row.response_payload as Record<string, unknown> | null;
+  const expiresAt = row.expires_at ? new Date(String(row.expires_at)) : null;
+
+  if (!expiresAt || expiresAt.getTime() <= Date.now()) {
+    return null;
+  }
+
+  if (
+    String(row.token_in).toLowerCase() !== params.tokenIn.toLowerCase() ||
+    String(row.token_out).toLowerCase() !== params.tokenOut.toLowerCase() ||
+    String(row.amount_in) !== params.amountBaseUnits ||
+    String(requestPayload?.swapper ?? "").toLowerCase() !== params.swapper.toLowerCase()
+  ) {
+    return null;
+  }
+
+  return {
+    outputAmount: String(row.quoted_amount_out),
+    routing: String(row.routing),
+    requestId: (row.request_id as string | null) ?? null,
+    gasEstimate: (row.gas_estimate as string | null) ?? null,
+    gasFeeUsd: row.gas_fee_usd == null ? null : Number(row.gas_fee_usd),
+    priceImpactBps: row.price_impact_bps == null ? null : Number(row.price_impact_bps),
+    routeSummary: (row.route_summary as Record<string, unknown> | null) ?? {},
+    responsePayload: responsePayload ?? {},
+    snapshotId: String(row.id),
+    fetchedAt: String(row.fetched_at),
   };
 }
 

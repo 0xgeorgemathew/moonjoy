@@ -45,6 +45,12 @@ export type EnrichedTrade = {
   quotedAmountOut: string;
   simulatedAmountOut: string;
   slippageBps: number;
+  tradeSide: "buy" | "sell" | "swap" | "exit" | null;
+  realizedPnlUsd: number | null;
+  closedCostBasisUsd: number | null;
+  inputValueUsd: number | null;
+  outputValueUsd: number | null;
+  retryable: boolean;
   status: "accepted" | "rejected";
   failureReason: string | null;
   acceptedAt: string;
@@ -86,7 +92,7 @@ export type LiveMatchData = {
   mandatoryWindowResults: MandatoryWindowResult[];
   trades: EnrichedTrade[];
   leaderboard: LeaderboardEntry[];
-  viewerPortfolio: PortfolioView | null;
+  creatorPortfolio: PortfolioView | null;
   opponentPortfolio: PortfolioView | null;
   allowedTokens: Array<{
     address: string;

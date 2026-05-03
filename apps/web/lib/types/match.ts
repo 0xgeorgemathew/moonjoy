@@ -16,6 +16,7 @@ export type MatchRow = {
   warmup_duration_seconds: number;
   settlement_grace_seconds: number;
   starting_capital_usd: number;
+  trade_rules_version: "buy_only_v1" | "bidirectional_v2";
   winner_seat: MatchSeat | null;
   winner_agent_id: string | null;
   result_summary: Record<string, unknown>;
@@ -53,6 +54,7 @@ export type MatchView = {
   warmupDurationSeconds: number;
   settlementGraceSeconds: number;
   startingCapitalUsd: number;
+  tradeRulesVersion: "buy_only_v1" | "bidirectional_v2";
   creator: MatchParticipantView;
   invite: MatchInviteView | null;
   opponent: MatchParticipantView | null;

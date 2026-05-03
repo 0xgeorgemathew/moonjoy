@@ -1,4 +1,9 @@
-import { BASE_CHAIN_ID, type RiskTier, RISK_POLICIES } from "@moonjoy/game";
+import {
+  BASE_CHAIN_ID,
+  type RiskTier,
+  RISK_POLICIES,
+  isTokenInAllowlist,
+} from "@moonjoy/game";
 import { createAdminClient } from "@/lib/supabase/admin";
 
 export type TokenInfo = {
@@ -121,8 +126,9 @@ export async function isTokenAllowedForMatch(
     token_universe_tokens: { address: string };
   }>;
 
-  return rows.some(
-    (r) => r.token_universe_tokens.address.toLowerCase() === normalized,
+  return isTokenInAllowlist(
+    rows.map((r) => r.token_universe_tokens.address),
+    normalized,
   );
 }
 
@@ -155,12 +161,13 @@ export async function addDiscoveredTokenToMatch(
   decimals: number,
 ): Promise<void> {
   const supabase = createAdminClient();
+  const normalizedTokenAddress = tokenAddress.toLowerCase();
 
   const { data: existing } = await supabase
     .from("token_universe_tokens")
     .select("id")
     .eq("chain_id", BASE_CHAIN_ID)
-    .eq("address", tokenAddress)
+    .eq("address", normalizedTokenAddress)
     .maybeSingle();
 
   let tokenId: string;
@@ -172,7 +179,7 @@ export async function addDiscoveredTokenToMatch(
       .from("token_universe_tokens")
       .insert({
         chain_id: BASE_CHAIN_ID,
-        address: tokenAddress,
+        address: normalizedTokenAddress,
         symbol,
         name,
         decimals,

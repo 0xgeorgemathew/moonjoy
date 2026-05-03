@@ -14,6 +14,12 @@ export type TradeRow = {
   status: "accepted" | "rejected";
   failure_reason: string | null;
   accepted_at: string;
+  trade_side?: "buy" | "sell" | "swap" | "exit" | null;
+  realized_pnl_usd?: number | null;
+  closed_cost_basis_usd?: number | null;
+  input_value_usd?: number | null;
+  output_value_usd?: number | null;
+  retryable?: boolean;
 };
 
 export type QuoteSnapshotRow = {
@@ -42,6 +48,10 @@ export type PortfolioBalance = {
   amountBaseUnits: string;
   symbol: string;
   valueUsd: number;
+  costBasisUsd?: number;
+  unrealizedPnlUsd?: number;
+  exitableAmountBaseUnits?: string;
+  exposurePercent?: number;
 };
 
 export type PortfolioView = {

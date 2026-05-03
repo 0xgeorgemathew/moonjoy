@@ -42,11 +42,11 @@ const serverInstructions = [
   "Do not attempt to create, accept, or cancel match invites. Those are human-only actions through the web app.",
   "Treat bootstrap.status and bootstrap.recommendedAction as the authority for setup progress.",
   "Sponsored bootstrap is enabled. A zero ETH balance or gasReserveSatisfied=false is not a blocker.",
-  "Trading is live: use moonjoy_market action=submit_trade to execute simulated fills from live Uniswap quotes on Base mainnet. No real swaps are broadcast.",
+  "Trading is live: use moonjoy_market action=submit_trade to buy, sell, exit, or rotate simulated positions from live Uniswap quotes on Base mainnet. No real swaps are broadcast.",
   "In a live match, call moonjoy_match action=play_turn first. It returns phase, time remaining, portfolio, last trade, and recommended next tools. NEVER ask the user whether to trade.",
   "During no_match: heartbeat and wait. Do not ask the human unless in strategy/bootstrap setup.",
   "During warmup: prepare strategy, discover candidates through moonjoy_market action=dexscreener_search, validate with action=validate_candidate, mark ready.",
-  "During live: keep playing through tools. Do not ask the human. If a trade fails, use the returned reason and try another valid action.",
+  "During live: keep playing through tools. Do not ask the human. Agents may buy, sell back to USDC, fully exit positions, or rotate token-to-token when the match supports bidirectional_v2 rules. If a trade fails, use the returned reason and try another valid action.",
   "During settling: heartbeat and record final rationale through moonjoy_strategy action=record_decision.",
   "Use moonjoy_market action=dexscreener_search to find tokens. Results include risk warnings but are NOT filtered. Only no Uniswap quote or not on Base blocks trade admission.",
   "Use moonjoy_market action=validate_candidate to check if a token is tradable on Base through Uniswap. Valid tokens are admitted to the match allowlist.",
@@ -271,6 +271,7 @@ function registerMarketTool(server: McpServer, context: McpRuntimeContext) {
         tokenOut: z.string().optional(),
         amount: z.string().optional(),
         amountInBaseUnits: z.string().optional(),
+        quoteSnapshotId: z.string().optional(),
         matchId: z.string().optional(),
         tokenAddress: z.string().optional(),
         tokenAddresses: z.array(z.string()).optional().describe("Up to 30 token addresses for dexscreener_tokens."),
@@ -313,6 +314,7 @@ function registerMarketTool(server: McpServer, context: McpRuntimeContext) {
               tokenIn: args.tokenIn,
               tokenOut: args.tokenOut,
               amountInBaseUnits: args.amountInBaseUnits,
+              quoteSnapshotId: args.quoteSnapshotId,
             }));
         }
       } catch (err) {
@@ -336,6 +338,7 @@ async function validateCandidate(
   dexscreenerSnapshot: Record<string, unknown> | null;
   message: string;
 }> {
+  const normalizedTokenAddress = tokenAddress.toLowerCase();
   const riskWarnings: string[] = [];
   let quoteAvailable = false;
   let quoteMetadata: Record<string, unknown> | null = null;
@@ -360,7 +363,7 @@ async function validateCandidate(
     const quote = await fetchExactInputQuote({
       swapper: context.smartAccountAddress as `0x${string}`,
       tokenIn: USDC,
-      tokenOut: tokenAddress as `0x${string}`,
+      tokenOut: normalizedTokenAddress as `0x${string}`,
       amountBaseUnits: "1000000",
       slippageBps: 100,
     });
@@ -377,7 +380,7 @@ async function validateCandidate(
 
   if (!quoteAvailable) {
     return {
-      tokenAddress,
+      tokenAddress: normalizedTokenAddress,
       chainId: "base",
       tradable: false,
       riskWarnings,
@@ -389,7 +392,7 @@ async function validateCandidate(
     };
   }
 
-  const profile = await getTokenRiskProfile(tokenAddress, context.smartAccountAddress);
+  const profile = await getTokenRiskProfile(normalizedTokenAddress, context.smartAccountAddress);
   const dexscreenerSnapshot = profile.pairSummary
     ? {
         liquidityUsd: profile.pairSummary.liquidityUsd,
@@ -405,10 +408,15 @@ async function validateCandidate(
     riskWarnings.push(...profile.pairSummary.riskWarnings);
   }
 
-  const admittedToAllowlist = await admitTokenToAllowlist(context, tokenAddress, profile);
+  const admittedToAllowlist = await admitTokenToAllowlist(context, normalizedTokenAddress, profile);
+  try {
+    await storeValidationDiscoverySnapshot(context, normalizedTokenAddress, profile, dexscreenerSnapshot);
+  } catch {
+    riskWarnings.push("discovery_snapshot_write_failed");
+  }
 
   return {
-    tokenAddress,
+    tokenAddress: normalizedTokenAddress,
     chainId: "base",
     tradable: true,
     riskWarnings,
@@ -428,6 +436,7 @@ async function admitTokenToAllowlist(
   profile: Awaited<ReturnType<typeof getTokenRiskProfile>>,
 ): Promise<boolean> {
   const supabase = createAdminClient();
+  const normalizedTokenAddress = tokenAddress.toLowerCase();
 
   let tokenId: string | null = null;
 
@@ -435,7 +444,7 @@ async function admitTokenToAllowlist(
     .from("token_universe_tokens")
     .select("id")
     .eq("chain_id", 8453)
-    .eq("address", tokenAddress)
+    .eq("address", normalizedTokenAddress)
     .maybeSingle();
 
   if (existing) {
@@ -445,9 +454,9 @@ async function admitTokenToAllowlist(
       .from("token_universe_tokens")
       .insert({
         chain_id: 8453,
-        address: tokenAddress,
-        symbol: profile.symbol ?? "UNKNOWN",
-        name: profile.name ?? "Unknown Token",
+        address: normalizedTokenAddress,
+        symbol: profile.symbol ?? `${normalizedTokenAddress.slice(0, 6)}…${normalizedTokenAddress.slice(-4)}`,
+        name: profile.name ?? `Token ${normalizedTokenAddress.slice(0, 10)}…`,
         decimals: 18,
         risk_tier: "discovered",
         source: "dexscreener_validation",
@@ -483,6 +492,39 @@ async function admitTokenToAllowlist(
     );
 
   return !allowlistError;
+}
+
+async function storeValidationDiscoverySnapshot(
+  context: McpRuntimeContext,
+  tokenAddress: string,
+  profile: Awaited<ReturnType<typeof getTokenRiskProfile>>,
+  dexscreenerSnapshot: Record<string, unknown> | null,
+): Promise<void> {
+  const supabase = createAdminClient();
+  const { data: activeMatches } = await supabase
+    .from("matches")
+    .select("id")
+    .or(`creator_agent_id.eq.${context.agentId},opponent_agent_id.eq.${context.agentId}`)
+    .in("status", ["warmup", "live", "settling"])
+    .order("created_at", { ascending: false });
+
+  if (!activeMatches || activeMatches.length !== 1) return;
+
+  const matchId = (activeMatches[0] as Record<string, unknown>).id as string;
+  await supabase.from("token_discovery_snapshots").insert({
+    match_id: matchId,
+    query: tokenAddress,
+    raw_source: "dexscreener",
+    raw_payload: {
+      tokenAddress,
+      symbol: profile.symbol,
+      name: profile.name,
+      riskTier: profile.riskTier,
+      pairSummary: profile.pairSummary,
+    },
+    filtered_payload: dexscreenerSnapshot ? [{ tokenAddress, ...dexscreenerSnapshot }] : [],
+    rejected_payload: [],
+  });
 }
 
 function toolFailure(err: unknown): CallToolResult {

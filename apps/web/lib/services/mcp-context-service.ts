@@ -15,7 +15,7 @@ import { submitSimulatedTrade } from "@/lib/services/trade-service";
 import { getTradeHistoryForMatch } from "@/lib/services/trade-service";
 import { getLeaderboardForMatch } from "@/lib/services/leaderboard-service";
 import { fetchExactInputQuote } from "@/lib/services/uniswap-quote-service";
-import { getAllBalances } from "@/lib/services/portfolio-ledger-service";
+import { getAllBalances, type BalanceDetail } from "@/lib/services/portfolio-ledger-service";
 import { getActiveTokensForMatch } from "@/lib/services/token-universe-service";
 import { tickActiveMatch } from "@/lib/services/worker-loop-service";
 import { createAdminClient } from "@/lib/supabase/admin";
@@ -433,7 +433,17 @@ export async function getMoonjoyPortfolio(
   penaltyImpactUsd: number;
   netScoreUsd: number;
   netScorePercent: number;
-  balances: Array<{ tokenAddress: string; amountBaseUnits: string }>;
+  balances: Array<{
+    tokenAddress: string;
+    symbol: string;
+    amountBaseUnits: string;
+    valueUsd: number;
+    costBasisUsd: number;
+    unrealizedPnlUsd: number;
+    exitableAmountBaseUnits: string;
+    exposurePercent: number;
+    suggestedExitToken: string;
+  }>;
   message: string;
 }> {
   const supabase = createAdminClient();
@@ -497,13 +507,11 @@ export async function getMoonjoyPortfolio(
         ? Number(v.total_pnl_usd) - Number(v.penalties_usd)
         : 0,
       netScorePercent: v ? Number(v.net_score_percent) : 0,
-      balances: [],
+      balances: extractPortfolioBalances(v),
       message:
         "Match settled. Final portfolio snapshot; penalties are negative dollar score adjustments.",
     };
   }
-
-  const balances = await getAllBalances(matchId, context.agentId);
 
   const { data: lastVal } = await supabase
     .from("portfolio_valuation_snapshots")
@@ -531,10 +539,39 @@ export async function getMoonjoyPortfolio(
       ? Number(lv.total_pnl_usd) - Number(lv.penalties_usd)
       : 0,
     netScorePercent: lv ? Number(lv.net_score_percent) : 0,
-    balances,
+    balances: extractPortfolioBalances(lv),
     message:
-      "Live portfolio. Simulated fill from live Uniswap quote on Base mainnet; penalties are shown as negative dollar impact.",
+      "Live portfolio. Agents may buy, sell, exit, and rotate quote-backed simulated positions; penalties are shown as negative dollar impact.",
   };
+}
+
+function extractPortfolioBalances(
+  snapshot: Record<string, unknown> | null,
+): Array<{
+  tokenAddress: string;
+  symbol: string;
+  amountBaseUnits: string;
+  valueUsd: number;
+  costBasisUsd: number;
+  unrealizedPnlUsd: number;
+  exitableAmountBaseUnits: string;
+  exposurePercent: number;
+  suggestedExitToken: string;
+}> {
+  const balances = (snapshot?.balances ?? []) as BalanceDetail[];
+  return balances.map((b) => ({
+    tokenAddress: b.tokenAddress,
+    symbol: b.symbol ?? "",
+    amountBaseUnits: b.amountBaseUnits,
+    valueUsd: b.valueUsd ?? 0,
+    costBasisUsd: b.costBasisUsd ?? 0,
+    unrealizedPnlUsd: b.unrealizedPnlUsd ?? 0,
+    exitableAmountBaseUnits: b.exitableAmountBaseUnits ?? b.amountBaseUnits,
+    exposurePercent: b.exposurePercent ?? 0,
+    suggestedExitToken: b.tokenAddress.toLowerCase() === BASE_USDC_ADDRESS.toLowerCase()
+      ? ""
+      : BASE_USDC_ADDRESS.toLowerCase(),
+  }));
 }
 
 export async function getMoonjoyMarketQuote(
@@ -543,6 +580,7 @@ export async function getMoonjoyMarketQuote(
 ): Promise<{
   status: "ok" | "no_match" | "error";
   quote?: {
+    snapshotId: string;
     outputAmount: string;
     routing: string;
     priceImpactBps: number | null;
@@ -569,6 +607,7 @@ export async function getMoonjoyMarketQuote(
     return {
       status: "ok",
       quote: {
+        snapshotId: quote.snapshotId,
         outputAmount: quote.outputAmount,
         routing: quote.routing,
         priceImpactBps: quote.priceImpactBps,
@@ -586,12 +625,22 @@ export async function getMoonjoyMarketQuote(
 
 export async function submitMoonjoyTrade(
   context: McpRuntimeContext,
-  params: { matchId: string; tokenIn: string; tokenOut: string; amountInBaseUnits: string },
+  params: {
+    matchId: string;
+    tokenIn: string;
+    tokenOut: string;
+    amountInBaseUnits: string;
+    quoteSnapshotId?: string;
+  },
 ): Promise<{
   status: "accepted" | "rejected";
   tradeId?: string;
   outputAmount?: string;
   routing?: string;
+  tradeSide?: Awaited<ReturnType<typeof submitSimulatedTrade>>["tradeSide"];
+  tradeLabel?: Awaited<ReturnType<typeof submitSimulatedTrade>>["tradeLabel"];
+  realizedPnlUsd?: number;
+  retryable?: boolean;
   reason?: string;
   portfolioAfterTrade?: Awaited<ReturnType<typeof submitSimulatedTrade>>["portfolioAfterTrade"];
   message: string;
@@ -628,13 +677,14 @@ export async function submitMoonjoyTrade(
     tokenOut: params.tokenOut,
     amountInBaseUnits: params.amountInBaseUnits,
     startingCapitalUsd: Number(matchRow.starting_capital_usd),
+    quoteSnapshotId: params.quoteSnapshotId,
   });
 
   return {
     ...result,
     message:
       result.status === "accepted"
-        ? "Simulated fill accepted from live Uniswap quote on Base mainnet. portfolioAfterTrade shows the new dollar value, PnL, penalty impact, and net score."
+        ? `Simulated ${result.tradeLabel ?? result.tradeSide ?? "trade"} accepted from live Uniswap quote on Base mainnet. portfolioAfterTrade shows value, realized/unrealized PnL, penalty impact, and net score.`
         : `Trade rejected: ${result.reason}`,
   };
 }
@@ -789,6 +839,23 @@ async function buildAutoTradePlan(
   };
 
   const usdcBalance = balanceFor(BASE_USDC_ADDRESS);
+  const nonUsdcBalance = balances.find(
+    (entry) =>
+      entry.tokenAddress.toLowerCase() !== BASE_USDC_ADDRESS.toLowerCase() &&
+      BigInt(entry.amountBaseUnits) > BigInt(0),
+  );
+
+  if (nonUsdcBalance && (phase === "closing_window" || usdcBalance < MIN_AUTO_TRADE_USDC_UNITS)) {
+    const heldAmount = BigInt(nonUsdcBalance.amountBaseUnits);
+    const amountIn = phase === "closing_window" ? heldAmount : heldAmount / BigInt(2);
+    if (amountIn > BigInt(0)) {
+      return {
+        tokenIn: nonUsdcBalance.tokenAddress,
+        tokenOut: BASE_USDC_ADDRESS,
+        amountInBaseUnits: amountIn.toString(),
+      };
+    }
+  }
 
   if (usdcBalance < MIN_AUTO_TRADE_USDC_UNITS) {
     return null;
