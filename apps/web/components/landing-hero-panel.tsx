@@ -10,12 +10,14 @@ import { LandingSettings } from "@/components/landing-settings";
 import { ArenaPanel } from "@/components/arena-panel";
 import { NetworkToggle } from "@/components/network-toggle";
 import { ChallengeModal } from "@/components/challenge-modal";
+import { useAuthState } from "@/lib/hooks/use-auth-state";
 import { useUserEnsStatus } from "@/lib/hooks/use-user-ens-status";
 
 type ViewType = "hero" | "match" | "profile" | "settings";
 
 export function LandingHeroPanel() {
   const { authenticated, getAccessToken } = usePrivy();
+  const { embeddedAddress, smartAccountAddress } = useAuthState();
   const searchParams = useSearchParams();
   const [activeView, setActiveView] = useState<ViewType>("hero");
   const [challengeOpen, setChallengeOpen] = useState(false);
@@ -34,7 +36,11 @@ export function LandingHeroPanel() {
 
   const [inviteLink, setInviteLink] = useState<string | null>(null);
 
-  const handleChallenge = async (opts: { scopeType: "open" | "ens"; scopedEnsName?: string }) => {
+  const handleChallenge = async (opts: {
+    scopeType: "open" | "ens";
+    scopedEnsName?: string;
+    startingCapitalUsd: number;
+  }) => {
     setChallengeLoading(true);
     setChallengeError(null);
     try {
@@ -46,6 +52,7 @@ export function LandingHeroPanel() {
         body: JSON.stringify({
           scopeType: opts.scopeType,
           scopedEnsName: opts.scopedEnsName,
+          startingCapitalUsd: opts.startingCapitalUsd,
         }),
       });
       const body = await res.json() as { error?: string; inviteLink?: string };
@@ -63,7 +70,7 @@ export function LandingHeroPanel() {
   };
 
   return (
-    <div className="relative z-20 flex min-h-full items-start justify-center pt-[18vh] px-2 sm:px-4 lg:pt-[14vh] lg:px-8">
+    <div className="relative z-20 flex min-h-full items-start justify-center pt-[14vh] px-2 sm:px-4 lg:pt-[10vh] lg:px-8">
       <div className="neo-panel flex w-full max-w-[90rem] flex-col overflow-hidden lg:h-[57rem] lg:flex-row">
         <LandingNav
           activeView={activeView}
@@ -85,6 +92,8 @@ export function LandingHeroPanel() {
               accessToken={accessToken}
               ensLoading={ensLoading}
               ensStatus={ensStatus}
+              embeddedAddress={embeddedAddress}
+              smartAccountAddress={smartAccountAddress}
             />
           </div>
         ) : activeView === "settings" && authenticated ? (
@@ -126,7 +135,7 @@ export function LandingHeroPanel() {
                   Challenge
                 </button>
                 <span className="text-[10px] font-label font-bold uppercase tracking-widest text-artemis-charcoal/40">
-                  $10 &middot; 5m &middot; $100
+                  $10 &middot; 5m &middot; choose capital
                 </span>
               </div>
             )}

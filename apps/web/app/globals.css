@@ -468,21 +468,21 @@ body {
 }
 
 .earth {
-	width: clamp(92px, 14vw, 160px);
-	height: clamp(92px, 14vw, 160px);
+	width: clamp(46px, 7vw, 80px);
+	height: clamp(46px, 7vw, 80px);
 	border-radius: 50%;
 	box-shadow:
-		0 0 22px 6px rgba(100 180 255 / 0.1),
-		0 0 52px 14px rgba(100 180 255 / 0.05);
+		0 0 11px 3px rgba(100 180 255 / 0.1),
+		0 0 26px 7px rgba(100 180 255 / 0.05);
 }
 
 .moon-hero {
-	width: clamp(120px, 18vw, 220px);
-	height: clamp(120px, 18vw, 220px);
+	width: clamp(60px, 9vw, 110px);
+	height: clamp(60px, 9vw, 110px);
 	border-radius: 50%;
 	box-shadow:
-		0 0 32px 10px rgba(200 210 230 / 0.12),
-		0 0 72px 20px rgba(180 195 220 / 0.08);
+		0 0 16px 5px rgba(200 210 230 / 0.12),
+		0 0 36px 10px rgba(180 195 220 / 0.08);
 }
 
 .stars-1 {
@@ -1045,6 +1045,41 @@ body {
 	100% { background-color: transparent; }
 }
 
+@keyframes score-bounce {
+	0% { transform: scale(1); }
+	30% { transform: scale(1.12); }
+	60% { transform: scale(0.97); }
+	100% { transform: scale(1); }
+}
+
+@keyframes phase-flash {
+	0% { background-color: rgb(229 57 53 / 0.25); }
+	100% { background-color: transparent; }
+}
+
+@keyframes arena-moon-pulse {
+	0%, 100% {
+		transform: scale(1);
+		filter: drop-shadow(0 0 18px rgba(200 210 230 / 0.15))
+			drop-shadow(0 0 50px rgba(180 195 220 / 0.08));
+	}
+	50% {
+		transform: scale(1.04);
+		filter: drop-shadow(0 0 30px rgba(200 210 230 / 0.25))
+			drop-shadow(0 0 70px rgba(180 195 220 / 0.15));
+	}
+}
+
+@keyframes urgent-vignette {
+	0%, 100% { box-shadow: inset 0 0 60px rgba(229 57 53 / 0.08); }
+	50% { box-shadow: inset 0 0 100px rgba(229 57 53 / 0.18); }
+}
+
+@keyframes viewer-border-pulse {
+	0%, 100% { border-left-width: 4px; }
+	50% { border-left-width: 7px; }
+}
+
 .arena-timer-urgent {
 	animation: timer-urgent 1s ease-in-out infinite;
 }
@@ -1055,6 +1090,14 @@ body {
 
 .arena-trade-flash {
 	animation: trade-flash 1.5s ease-out forwards;
+}
+
+.arena-score-bounce {
+	animation: score-bounce 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.arena-phase-flash {
+	animation: phase-flash 0.6s ease-out;
 }
 
 .arena-role-badge {
@@ -1080,25 +1123,6 @@ body {
 	border: 1px solid var(--outline-variant);
 }
 
-.arena-spread-bar {
-	height: 8px;
-	border-radius: 9999px;
-	background: var(--surface-variant);
-	overflow: hidden;
-	position: relative;
-}
-
-.arena-spread-fill {
-	height: 100%;
-	background: linear-gradient(90deg, var(--primary), var(--artemis-red-light));
-	border-radius: 9999px;
-	transition: width 0.6s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
-.arena-spread-fill-from-right {
-	margin-left: auto;
-}
-
 .arena-status-dot {
 	width: 10px;
 	height: 10px;
@@ -1115,6 +1139,164 @@ body {
 .arena-status-dot-disconnected {
 	background: var(--on-surface-variant);
 	opacity: 0.3;
+}
+
+/* ===== Arena Idle State ===== */
+
+.arena-idle-moon {
+	width: 160px;
+	height: 160px;
+	border-radius: 50%;
+	background-image: url("/moon-texture.png");
+	background-size: 200% 100%;
+	background-color: #b5bbc8;
+	background-blend-mode: multiply;
+	box-shadow:
+		inset -30px 0 50px rgba(8, 15, 24, 0.85),
+		inset 10px 0 20px rgba(248, 249, 255, 0.4),
+		inset 0 0 10px rgba(248, 249, 255, 0.2);
+	animation: spin-planet 40s linear infinite, arena-moon-pulse 4s ease-in-out infinite;
+}
+
+.arena-idle-term-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	padding: 4px 12px;
+	border: 2px solid #000;
+	border-radius: 99px;
+	font-family: var(--font-label), sans-serif;
+	font-size: 11px;
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	background: #fff;
+	color: var(--artemis-charcoal);
+	box-shadow: 2px 2px 0 0 var(--artemis-blue);
+}
+
+.arena-blocker-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 22px;
+	height: 22px;
+	padding: 0 6px;
+	border: 2px solid #000;
+	border-radius: 99px;
+	font-family: var(--font-label), sans-serif;
+	font-size: 11px;
+	font-weight: 900;
+	background: var(--artemis-red);
+	color: #fff;
+	box-shadow: 2px 2px 0 0 var(--artemis-blue);
+}
+
+/* ===== Arena Compact Trade Row ===== */
+
+.arena-compact-trade {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	padding: 8px 14px;
+	border-bottom: 2px dashed rgba(0, 0, 0, 0.1);
+	animation: trade-enter 0.35s ease-out backwards;
+}
+
+.arena-compact-trade:last-child {
+	border-bottom: none;
+}
+
+.arena-compact-trade-pnl {
+	font-size: 11px;
+	font-weight: 800;
+	font-family: var(--font-label), sans-serif;
+	font-variant-numeric: tabular-nums;
+	padding: 2px 8px;
+	border-radius: 99px;
+}
+
+.arena-compact-trade-pnl.positive {
+	color: var(--artemis-red);
+	background: rgb(229 57 53 / 0.08);
+}
+
+.arena-compact-trade-pnl.negative {
+	color: var(--artemis-charcoal);
+	background: rgba(0, 0, 0, 0.05);
+}
+
+/* ===== Arena Expand Button ===== */
+
+.arena-expand-btn {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 4px;
+	width: 100%;
+	padding: 8px;
+	border: 2px dashed rgba(0, 0, 0, 0.15);
+	border-radius: 6px;
+	font-family: var(--font-label), sans-serif;
+	font-size: 11px;
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: 0.1em;
+	color: var(--artemis-charcoal);
+	background: transparent;
+	cursor: pointer;
+	transition: all 0.15s ease;
+}
+
+.arena-expand-btn:hover {
+	border-color: #000;
+	color: #000;
+	background: #fafafa;
+}
+
+/* ===== Arena Status Bar ===== */
+
+.arena-status-bar {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 16px;
+	padding: 10px 24px;
+	background: #fff;
+	border-top: 3px solid #000;
+	font-family: var(--font-label), sans-serif;
+	font-size: 11px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	color: var(--artemis-charcoal);
+}
+
+.arena-status-bar-dot {
+	width: 5px;
+	height: 5px;
+	border-radius: 50%;
+	background: var(--artemis-silver);
+}
+
+.arena-urgent-vignette {
+	animation: urgent-vignette 1.5s ease-in-out infinite;
+}
+
+.arena-viewer-border-live {
+	animation: viewer-border-pulse 2s ease-in-out infinite;
+}
+
+.arena-invite-card {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 12px 16px;
+	border: 2px solid #000;
+	border-radius: 10px;
+	background: #fff;
+	box-shadow: 3px 3px 0 0 var(--artemis-blue);
 }
 
 /* ===== Arena — Neo-Brutalist White Pit ===== */
@@ -1180,137 +1362,8 @@ body {
 	box-shadow: 3px 3px 0 0 var(--artemis-blue);
 }
 
-/* VS Grid container */
-.arena-vs-grid {
-	display: grid;
-	grid-template-columns: 1fr 48px 1fr;
-	flex: 1;
-	min-height: 0;
-}
-
-/* Center VS divider — brutalist black bars */
-.arena-vs-divider {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: start;
-	padding-top: 20px;
-	background: #f5f5f5;
-	border-left: 3px solid #000;
-	border-right: 3px solid #000;
-}
-
-.arena-vs-glyph {
-	font-family: var(--font-display), sans-serif;
-	font-size: 14px;
-	font-weight: 900;
-	color: var(--artemis-charcoal);
-	letter-spacing: 0.05em;
-}
-
-.arena-vs-glyph.win {
-	color: var(--artemis-red);
-}
-
-/* Player column — white surface, matches neo-panel interior */
-.arena-player-col {
-	display: flex;
-	flex-direction: column;
-	min-height: 0;
-	overflow: hidden;
-	background: #fff;
-}
-
-.arena-player-col.is-viewer {
-	border-left: 4px solid var(--artemis-red);
-}
-
-/* Identity header */
-.arena-identity {
-	padding: 14px 16px 10px;
-	border-bottom: 2px dashed var(--artemis-charcoal);
-	opacity: 0.8;
-}
-
-.arena-role-tag {
-	font-size: 9px;
-	font-weight: 900;
-	letter-spacing: 0.18em;
-	text-transform: uppercase;
-	color: var(--artemis-charcoal);
-	font-family: var(--font-label), sans-serif;
-}
-
-.arena-role-tag.is-viewer {
-	color: var(--artemis-red);
-}
-
-.arena-you-chip {
-	font-size: 10px;
-	font-weight: 800;
-	letter-spacing: 0.1em;
-	text-transform: uppercase;
-	color: #fff;
-	background: var(--artemis-red);
-	padding: 3px 10px;
-	border: 2px solid #000;
-	border-radius: 4px;
-	font-family: var(--font-label), sans-serif;
-	box-shadow: 2px 2px 0 0 var(--artemis-blue);
-}
-
-.arena-agent-name {
-	font-size: 17px;
-	font-weight: 900;
-	font-family: var(--font-display), sans-serif;
-	color: #000;
-	line-height: 1.1;
-	letter-spacing: -0.02em;
-	overflow: hidden;
-	text-overflow: ellipsis;
-	white-space: nowrap;
-}
-
-.arena-agent-name.is-viewer {
-	color: var(--artemis-red);
-}
-
-.arena-pilot-line {
-	font-size: 11px;
-	font-family: var(--font-body), sans-serif;
-	color: var(--artemis-charcoal);
-	margin-top: 2px;
-}
-
-/* Score block — hero numbers on light tint */
-.arena-score-block {
-	padding: 16px;
-	border-bottom: 3px solid #000;
-	background: #fafafa;
-}
-
-.arena-score-label {
-	font-size: 9px;
-	font-weight: 800;
-	letter-spacing: 0.15em;
-	text-transform: uppercase;
-	color: var(--artemis-charcoal);
-	font-family: var(--font-label), sans-serif;
-	margin-bottom: 6px;
-}
-
-.arena-score-value {
-	font-size: 40px;
-	font-weight: 900;
-	font-family: var(--font-display), sans-serif;
-	line-height: 1;
-	letter-spacing: -0.03em;
-	font-variant-numeric: tabular-nums;
-}
-
-.arena-score-value.positive { color: var(--artemis-red); }
-.arena-score-value.negative { color: var(--artemis-charcoal); }
-.arena-score-value.neutral { color: var(--artemis-silver); }
+/* VS Grid container — unused, kept for reference */
+/* Score block — unused, kept for reference */
 
 .arena-score-row {
 	display: flex;
@@ -1367,280 +1420,11 @@ body {
 	box-shadow: 2px 2px 0 0 var(--artemis-blue);
 }
 
-/* Holdings */
-.arena-holdings {
-	padding: 10px 16px;
-	border-bottom: 2px solid #000;
-	background: #fff;
-}
 
-.arena-holding-row {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	padding: 4px 0;
-}
 
-.arena-holding-symbol {
-	font-size: 12px;
-	font-weight: 800;
-	font-family: var(--font-label), sans-serif;
-	color: var(--artemis-charcoal);
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
-}
+/* Trade feed — replaced by arena-battleground-col */
 
-.arena-holding-symbol.primary-token {
-	color: #000;
-	font-weight: 900;
-}
 
-.arena-holding-value {
-	font-size: 12px;
-	font-weight: 700;
-	font-family: var(--font-label), sans-serif;
-	color: #000;
-	font-variant-numeric: tabular-nums;
-}
-
-.arena-holding-value.primary-token {
-	color: var(--artemis-red);
-	font-weight: 900;
-}
-
-.arena-holding-pnl {
-	font-size: 10px;
-	margin-left: 6px;
-	font-weight: 700;
-	font-variant-numeric: tabular-nums;
-}
-
-.arena-holding-pnl.positive { color: var(--artemis-red); }
-.arena-holding-pnl.negative { color: var(--artemis-charcoal); }
-
-/* Trade feed — white surface with visible brutalist scrollbar */
-.arena-trade-feed {
-	flex: 1;
-	min-height: 0;
-	overflow-y: auto;
-	background: #fff;
-	scrollbar-width: thin;
-	scrollbar-color: var(--artemis-charcoal) transparent;
-
-	&::-webkit-scrollbar { width: 5px; }
-	&::-webkit-scrollbar-track { background: #f5f5f5; border-left: 2px solid #000; }
-	&::-webkit-scrollbar-thumb {
-		background: var(--artemis-charcoal);
-		border-radius: 0;
-		border: 1px solid #000;
-	}
-	&::-webkit-scrollbar-thumb:hover {
-		background: #000;
-	}
-}
-
-.arena-trade-empty {
-	display: flex;
-	flex-direction: column;
-	align-items: center;
-	justify-content: center;
-	height: 100%;
-	padding: 32px 0;
-	gap: 6px;
-}
-
-.arena-trade-empty-title {
-	font-size: 13px;
-	font-weight: 900;
-	font-family: var(--font-display), sans-serif;
-	text-transform: uppercase;
-	letter-spacing: 0.1em;
-	color: var(--artemis-silver);
-}
-
-.arena-trade-empty-sub {
-	font-size: 12px;
-	font-family: var(--font-body), sans-serif;
-	color: var(--artemis-silver);
-}
-
-/* Trade cards — neo-brutalist mini cards with hard shadows */
-.arena-trade-card {
-	margin: 6px 10px;
-	padding: 10px 12px;
-	border: 2px solid #000;
-	border-radius: 8px;
-	background: #fff;
-	box-shadow: 3px 3px 0 0 var(--artemis-blue);
-	transition: transform 0.1s ease, box-shadow 0.1s ease;
-	animation: trade-enter 0.35s ease-out backwards;
-}
-
-.arena-trade-card:hover {
-	transform: translate(-1px, -1px);
-	box-shadow: 4px 4px 0 0 var(--artemis-blue);
-}
-
-.arena-trade-card.is-viewer {
-	box-shadow: 3px 3px 0 0 var(--artemis-red);
-}
-
-.arena-trade-card.is-viewer:hover {
-	box-shadow: 4px 4px 0 0 var(--artemis-red);
-}
-
-.arena-trade-header {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	gap: 8px;
-	margin-bottom: 6px;
-}
-
-.arena-trade-side-badge {
-	font-size: 9px;
-	font-weight: 900;
-	letter-spacing: 0.08em;
-	text-transform: uppercase;
-	padding: 2px 7px;
-	border: 2px solid #000;
-	border-radius: 4px;
-	flex-shrink: 0;
-	font-family: var(--font-label), sans-serif;
-}
-
-.arena-trade-side-badge.buy {
-	color: #000;
-	background: #fff;
-}
-
-.arena-trade-side-badge.sell {
-	color: #fff;
-	background: var(--artemis-red);
-}
-
-.arena-trade-side-badge.exit {
-	color: var(--artemis-charcoal);
-	background: #f0f0f0;
-}
-
-.arena-trade-amounts {
-	display: flex;
-	align-items: center;
-	gap: 4px;
-	min-width: 0;
-	flex: 1;
-}
-
-.arena-trade-amount {
-	font-size: 12px;
-	font-weight: 700;
-	font-family: var(--font-label), sans-serif;
-	color: #000;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-
-.arena-trade-amount-symbol {
-	color: var(--artemis-charcoal);
-	font-size: 10px;
-	font-weight: 700;
-	text-transform: uppercase;
-}
-
-.arena-trade-arrow {
-	color: var(--artemis-silver);
-	font-size: 12px;
-	flex-shrink: 0;
-	font-weight: 700;
-}
-
-.arena-trade-amount-out {
-	font-size: 12px;
-	font-weight: 700;
-	font-family: var(--font-label), sans-serif;
-	color: #000;
-	white-space: nowrap;
-	overflow: hidden;
-	text-overflow: ellipsis;
-}
-
-.arena-trade-time {
-	font-size: 9px;
-	font-family: var(--font-label), sans-serif;
-	color: var(--artemis-silver);
-	font-variant-numeric: tabular-nums;
-	flex-shrink: 0;
-	font-weight: 600;
-}
-
-.arena-trade-pnl {
-	font-size: 12px;
-	font-weight: 900;
-	font-family: var(--font-label), sans-serif;
-	font-variant-numeric: tabular-nums;
-	padding: 3px 8px;
-	border: 2px solid #000;
-	border-radius: 4px;
-	display: inline-block;
-	margin-top: 6px;
-}
-
-.arena-trade-pnl.positive {
-	color: #000;
-	background: #fff;
-}
-
-.arena-trade-pnl.negative {
-	color: #fff;
-	background: var(--artemis-red);
-}
-
-.arena-trade-reject {
-	font-size: 10px;
-	font-family: var(--font-label), sans-serif;
-	color: var(--artemis-red);
-	font-weight: 700;
-	margin-top: 4px;
-	padding: 3px 6px;
-	border: 2px solid #000;
-	border-radius: 4px;
-	background: #fff;
-}
-
-/* Footer bar for windows / meta info */
-.arena-footer-bar {
-	display: flex;
-	align-items: center;
-	justify-content: space-between;
-	padding: 8px 16px;
-	background: #fff;
-	border-top: 3px solid #000;
-}
-
-.arena-window-pill {
-	font-size: 9px;
-	font-family: var(--font-label), sans-serif;
-	font-weight: 800;
-	text-transform: uppercase;
-	letter-spacing: 0.05em;
-	padding: 3px 10px;
-	border: 2px solid #000;
-	border-radius: 99px;
-	font-variant-numeric: tabular-nums;
-}
-
-.arena-window-pill.done {
-	color: #000;
-	background: #fff;
-	box-shadow: 2px 2px 0 0 var(--artemis-blue);
-}
-
-.arena-window-pill.missed {
-	color: #fff;
-	background: var(--artemis-red);
-}
 
 .arena-result-text {
 	font-size: 14px;
@@ -1653,15 +1437,7 @@ body {
 .arena-result-text.creator-wins { color: var(--artemis-red); }
 .arena-result-text.challenger-wins { color: var(--artemis-blue); }
 
-/* Staggered trade card entry animations */
-.arena-trade-card:nth-child(1) { animation-delay: 0ms; }
-.arena-trade-card:nth-child(2) { animation-delay: 40ms; }
-.arena-trade-card:nth-child(3) { animation-delay: 80ms; }
-.arena-trade-card:nth-child(4) { animation-delay: 120ms; }
-.arena-trade-card:nth-child(5) { animation-delay: 160ms; }
-.arena-trade-card:nth-child(6) { animation-delay: 200ms; }
-.arena-trade-card:nth-child(7) { animation-delay: 240ms; }
-.arena-trade-card:nth-child(8) { animation-delay: 280ms; }
+
 
 /* ===== Neobrutalism Utilities — Artemis Edition ===== */
 
@@ -1784,4 +1560,386 @@ body {
 	letter-spacing: 0.12em;
 	background: #fff;
 	color: var(--artemis-charcoal);
+}
+
+/* ===== Arena Redesign — Live HUD ===== */
+
+@keyframes shimmer {
+	0% { background-position: -200% center; }
+	100% { background-position: 200% center; }
+}
+
+@keyframes tug-bounce {
+	0% { transform: scaleX(1); }
+	30% { transform: scaleX(1.03); }
+	60% { transform: scaleX(0.99); }
+	100% { transform: scaleX(1); }
+}
+
+@keyframes victory-glow-pulse {
+	0%, 100% {
+		box-shadow:
+			inset 0 0 12px rgba(232 166 35 / 0.15),
+			0 0 0 2px #000;
+	}
+	50% {
+		box-shadow:
+			inset 0 0 24px rgba(232 166 35 / 0.3),
+			0 0 12px rgba(232 166 35 / 0.15),
+			0 0 0 2px #000;
+	}
+}
+
+@keyframes waiting-pulse {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.4; }
+}
+
+.arena-tug-bar {
+	width: 100%;
+	height: 14px;
+	background: #f0f0f0;
+	border: 3px solid #000;
+	border-radius: 4px;
+	overflow: hidden;
+	position: relative;
+}
+
+.arena-tug-fill-creator {
+	position: absolute;
+	top: 0;
+	left: 0;
+	height: 100%;
+	background: var(--artemis-red);
+	border-radius: 0;
+	transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.arena-tug-fill-creator.bounce {
+	animation: tug-bounce 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.arena-tug-fill-opponent {
+	position: absolute;
+	top: 0;
+	right: 0;
+	height: 100%;
+	background: var(--artemis-blue);
+	border-radius: 0;
+	transition: width 0.6s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.arena-tug-fill-opponent.bounce {
+	animation: tug-bounce 0.4s cubic-bezier(0.34, 1.56, 0.64, 1);
+}
+
+.arena-player-identity {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	gap: 4px;
+	padding: 16px 12px 12px;
+	flex: 1;
+	min-width: 0;
+}
+
+.arena-player-identity.is-winner {
+	animation: victory-glow-pulse 2s ease-in-out infinite;
+	border-radius: 12px;
+}
+
+.arena-wager-badge {
+	display: inline-flex;
+	align-items: center;
+	padding: 3px 10px;
+	border: 2px solid #000;
+	border-radius: 99px;
+	font-family: var(--font-label), sans-serif;
+	font-size: 10px;
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: 0.08em;
+	background: #fff;
+	color: var(--artemis-charcoal);
+	box-shadow: 2px 2px 0 0 var(--artemis-blue);
+}
+
+.arena-winner-label {
+	font-family: var(--font-display), sans-serif;
+	font-size: 18px;
+	font-weight: 900;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	color: var(--artemis-red);
+	text-shadow: 3px 3px 0 var(--artemis-blue);
+}
+
+.arena-waiting-text {
+	animation: waiting-pulse 2s ease-in-out infinite;
+	font-family: var(--font-label), sans-serif;
+	font-size: 12px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.1em;
+	color: var(--artemis-charcoal);
+}
+
+/* ===== Arena Scoreboard — Redesigned ===== */
+
+.arena-scoreboard {
+	background: #fff;
+	border: 4px solid #000;
+	border-radius: 16px;
+	box-shadow: 6px 6px 0 0 var(--artemis-blue);
+	margin: 8px;
+}
+
+.arena-scoreboard-players {
+	display: flex;
+	position: relative;
+}
+
+.arena-vs-badge {
+	position: absolute;
+	top: 50%;
+	left: 50%;
+	transform: translate(-50%, -50%);
+	z-index: 2;
+	background: #000;
+	color: #fff;
+	border: 2px solid #000;
+	border-radius: 8px;
+	padding: 8px 18px;
+	font-family: var(--font-display), sans-serif;
+	font-weight: 900;
+	font-size: 16px;
+	letter-spacing: 0.15em;
+	text-transform: uppercase;
+}
+
+.arena-scoreboard-tug {
+	padding: 0 12px 10px;
+}
+
+/* ===== Arena Battleground — Split View ===== */
+
+.arena-battleground {
+	flex: 1;
+	display: flex;
+	min-height: 0;
+	overflow: hidden;
+	margin: 0 8px 8px;
+}
+
+.arena-battleground-col {
+	flex: 1;
+	min-height: 0;
+	min-width: 0;
+	overflow-y: auto;
+	background: #f0ebe0;
+	border: 2px solid #000;
+	border-radius: 10px;
+	padding: 8px;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+
+	scrollbar-width: thin;
+	scrollbar-color: var(--artemis-charcoal) transparent;
+	&::-webkit-scrollbar { width: 5px; }
+	&::-webkit-scrollbar-track { background: #f5f5f5; }
+	&::-webkit-scrollbar-thumb {
+		background: var(--artemis-charcoal);
+		border-radius: 0;
+		border: 1px solid #000;
+	}
+}
+
+.arena-battleground-divider {
+	width: 3px;
+	background: #000;
+	flex-shrink: 0;
+}
+
+/* ===== Arena Trade Action Card ===== */
+
+.arena-trade-action-card {
+	background: #fff;
+	border: 3px solid #000;
+	border-radius: 10px;
+	box-shadow: 4px 4px 0 0 var(--artemis-blue);
+	padding: 10px 14px;
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	flex-shrink: 0;
+	animation: trade-enter 0.35s ease-out backwards;
+}
+
+.arena-trade-action-row-top {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+}
+
+.arena-trade-action-side {
+	font-family: var(--font-label), sans-serif;
+	font-size: 11px;
+	font-weight: 900;
+	text-transform: uppercase;
+	letter-spacing: 0.1em;
+	padding: 2px 8px;
+	border: 2px solid #000;
+	border-radius: 4px;
+	flex-shrink: 0;
+}
+
+.arena-trade-action-side.creator {
+	background: var(--artemis-red);
+	color: #fff;
+}
+
+.arena-trade-action-side.opponent {
+	background: var(--artemis-blue-light);
+	color: #fff;
+}
+
+.arena-trade-action-asset {
+	font-family: var(--font-body), sans-serif;
+	font-size: 13px;
+	font-weight: 800;
+	color: #000;
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.arena-trade-action-price {
+	font-family: var(--font-display), sans-serif;
+	font-size: 13px;
+	font-weight: 900;
+	color: #000;
+	font-variant-numeric: tabular-nums;
+	flex-shrink: 0;
+	text-align: right;
+}
+
+.arena-trade-action-row-bottom {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 8px;
+}
+
+.arena-trade-action-swap {
+	font-family: var(--font-label), sans-serif;
+	font-size: 11px;
+	font-weight: 700;
+	color: var(--artemis-charcoal);
+	flex: 1;
+	min-width: 0;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.arena-trade-action-pnl {
+	font-family: var(--font-label), sans-serif;
+	font-size: 11px;
+	font-weight: 900;
+	font-variant-numeric: tabular-nums;
+	padding: 2px 8px;
+	border: 2px solid #000;
+	border-radius: 4px;
+	flex-shrink: 0;
+	text-align: right;
+}
+
+.arena-trade-action-pnl.positive {
+	background: #fff;
+	color: #000;
+}
+
+.arena-trade-action-pnl.negative {
+	background: var(--artemis-red);
+	color: #fff;
+}
+
+/* ===== Arena Battleground Empty State ===== */
+
+.arena-battleground-empty {
+	flex: 1;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	border: 3px dashed var(--artemis-charcoal);
+	border-radius: 10px;
+	opacity: 0.5;
+	padding: 24px;
+	min-height: 120px;
+}
+
+.arena-battleground-empty-text {
+	font-family: var(--font-label), sans-serif;
+	font-size: 11px;
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: 0.18em;
+	color: var(--artemis-charcoal);
+	text-align: center;
+}
+
+/* ===== Match Result Modal ===== */
+
+@keyframes match-result-enter {
+	from {
+		opacity: 0;
+		transform: translateY(32px) scale(0.95);
+	}
+	to {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
+@keyframes match-result-headline-slam {
+	0% {
+		opacity: 0;
+		transform: translateY(20px) scale(0.8);
+	}
+	50% {
+		transform: translateY(-4px) scale(1.04);
+	}
+	100% {
+		opacity: 1;
+		transform: translateY(0) scale(1);
+	}
+}
+
+@keyframes match-result-winner-shimmer {
+	0% {
+		background-position: -200% center;
+	}
+	100% {
+		background-position: 200% center;
+	}
+}
+
+.match-result-card {
+	animation: match-result-enter 0.4s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.match-result-headline {
+	animation: match-result-headline-slam 0.5s cubic-bezier(0.16, 1, 0.3, 1) 0.1s both;
+}
+
+.match-result-trophy {
+	position: relative;
+}
+
+.match-result-winner-col {
+	animation: victory-glow-pulse 2s ease-in-out infinite;
+	border-radius: 0;
 }

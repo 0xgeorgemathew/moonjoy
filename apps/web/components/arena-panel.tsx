@@ -3,51 +3,10 @@
 import { useEffect, useRef, useState, useCallback } from "react";
 import { usePrivy } from "@privy-io/react-auth";
 import { createClient } from "@/lib/supabase/client";
-import type { ArenaSnapshot, EnrichedTrade } from "@/lib/types/arena";
+import type { ArenaEventLogEntry, ArenaSnapshot, EnrichedTrade } from "@/lib/types/arena";
 import type { MatchView } from "@/lib/types/match";
 import type { PortfolioView } from "@/lib/types/trading";
-
-// ─── Types ──────────────────────────────────────
-
-type MatchCreationContext = {
-  readiness: {
-    ready: boolean;
-    blockers: string[];
-  };
-  ensPreference: {
-    parsed: {
-      durationSeconds: number | null;
-      wagerUsd: number | null;
-      capitalUsd: { min: number | null; max: number | null };
-    };
-    warnings: string[];
-  } | null;
-  suggestedTerms: {
-    wagerUsd: number;
-    durationSeconds: number;
-    startingCapitalUsd: number;
-    warmupSeconds: number;
-  };
-  requiredInputs: string[];
-  constraints: {
-    scopeTypes: readonly string[];
-    wagerUsd: readonly number[];
-    durationSeconds: readonly number[];
-    startingCapitalUsd: readonly number[];
-    warmupSeconds: readonly number[];
-  };
-  openInvite: {
-    id: string;
-    inviteToken: string;
-    status: string;
-    wagerUsd: number;
-    durationSeconds: number;
-    startingCapitalUsd: number;
-    scopeType: string;
-    scopedEnsName: string | null;
-  } | null;
-  arenaPath: string;
-};
+import { MatchResultModal } from "@/components/match-result-modal";
 
 // ─── Number Formatting ────────────────────────────
 
@@ -67,18 +26,6 @@ function fmtMmSs(totalSeconds: number): string {
   return `${String(m).padStart(2, "0")}:${String(s).padStart(2, "0")}`;
 }
 
-function timeAgo(iso: string): string {
-  const diff = Math.floor((Date.now() - new Date(iso).getTime()) / 1000);
-  if (diff < 5) return "now";
-  if (diff < 60) return `${diff}s ago`;
-  return `${Math.floor(diff / 60)}m ago`;
-}
-
-function shortAddr(address: string | undefined): string {
-  if (!address) return "";
-  return `${address.slice(0, 6)}…${address.slice(-4)}`;
-}
-
 function pnlSign(val: number): string {
   return val >= 0 ? "+" : "";
 }
@@ -95,30 +42,16 @@ function phaseInfo(phase: string): { label: string; active: boolean; isLive: boo
     case "opening_window": return { label: "OPENING", active: true, isLive: true };
     case "midgame":
     case "live": return { label: "LIVE", active: true, isLive: true };
-    case "closing_window": return { label: "CLOSING", active: true, isLive: true };
+    case "cycle_out": return { label: "CYCLE OUT", active: true, isLive: true };
     case "settling": return { label: "SETTLING", active: false, isLive: false };
     case "settled": return { label: "FINAL", active: false, isLive: false };
     default: return { label: phase.replace(/_/g, " ").toUpperCase(), active: false, isLive: false };
   }
 }
 
-function formatPreferenceSummary(preference: NonNullable<MatchCreationContext["ensPreference"]>): string {
-  const duration = preference.parsed.durationSeconds
-    ? `${Math.floor(preference.parsed.durationSeconds / 60)}m`
-    : "any duration";
-  const wager = preference.parsed.wagerUsd ? `$${preference.parsed.wagerUsd}` : "any wager";
-  const minCapital = preference.parsed.capitalUsd.min;
-  const maxCapital = preference.parsed.capitalUsd.max;
-  const capital =
-    minCapital && maxCapital
-      ? `$${minCapital}-$${maxCapital} capital`
-      : minCapital
-        ? `$${minCapital}+ capital`
-        : maxCapital
-          ? `up to $${maxCapital} capital`
-          : "any capital";
-
-  return `${wager} · ${capital} · ${duration}`;
+function firstLabel(ens: string): string {
+  const dot = ens.indexOf(".");
+  return dot > 0 ? ens.slice(0, dot) : ens;
 }
 
 // ─── Main Component ──────────────────────────────
@@ -131,26 +64,26 @@ export function ArenaPanel() {
 
   const [snapshot, setSnapshot] = useState<ArenaSnapshot | null>(null);
   const [loading, setLoading] = useState(true);
-  const [creating, setCreating] = useState(false);
-
-  // Create-match form state
-  const [creationCtx, setCreationCtx] = useState<MatchCreationContext | null>(null);
-  const [inviteScope, setInviteScope] = useState<"open" | "ens">("open");
-  const [inviteEnsName, setInviteEnsName] = useState("");
-  const [wagerUsd, setWagerUsd] = useState<number>(10);
-  const [durationSeconds, setDurationSeconds] = useState<number>(300);
-  const [startingCapitalUsd, setStartingCapitalUsd] = useState<number>(100);
-  const [inviteLink, setInviteLink] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [connected, setConnected] = useState(false);
   const [snapshotLoadedAt, setSnapshotLoadedAt] = useState(0);
   const [now, setNow] = useState(0);
+  const [resultDismissed, setResultDismissed] = useState(false);
+  const prevSettledMatchIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     queueMicrotask(() => setNow(Date.now()));
     const id = setInterval(() => setNow(Date.now()), 1000);
     return () => clearInterval(id);
   }, []);
+
+  useEffect(() => {
+    const matchId = snapshot?.recentSettledMatch?.id ?? null;
+    if (matchId !== prevSettledMatchIdRef.current) {
+      prevSettledMatchIdRef.current = matchId;
+      setResultDismissed(false);
+    }
+  }, [snapshot?.recentSettledMatch?.id]);
 
   const fetchJson = useCallback(
     async <T,>(url: string, opts?: RequestInit): Promise<T> => {
@@ -183,7 +116,6 @@ export function ArenaPanel() {
     }
   }, [fetchJson]);
 
-  // Initial load
   useEffect(() => {
     if (!ready || !authenticated) {
       queueMicrotask(() => setLoading(false));
@@ -192,7 +124,6 @@ export function ArenaPanel() {
     queueMicrotask(() => void refreshSnapshot());
   }, [ready, authenticated, refreshSnapshot]);
 
-  // Broadcast channels — agent-level
   useEffect(() => {
     if (!snapshot?.viewer.agentTopic) return;
     const channel = supabase
@@ -206,7 +137,6 @@ export function ArenaPanel() {
     return () => { void supabase.removeChannel(channel); };
   }, [snapshot?.viewer.agentTopic, refreshSnapshot, supabase]);
 
-  // Broadcast channels — match-level
   useEffect(() => {
     if (!snapshot?.live?.match.id) return;
     const channel = supabase
@@ -218,7 +148,6 @@ export function ArenaPanel() {
     return () => { void supabase.removeChannel(channel); };
   }, [snapshot?.live?.match.id, refreshSnapshot, supabase]);
 
-  // Postgres Changes — real-time row inserts/updates
   useEffect(() => {
     if (!snapshot?.live?.match.id) return;
     const matchId = snapshot.live.match.id;
@@ -250,81 +179,28 @@ export function ArenaPanel() {
     return () => { void supabase.removeChannel(channel); };
   }, [snapshot?.live?.match.id, refreshSnapshot, supabase]);
 
-  // Auto-scroll on new trades
   useEffect(() => {
     const count = snapshot?.live?.trades.length ?? 0;
     if (count > prevTradeCountRef.current && feedRef.current) {
-      feedRef.current.scrollTop = 0;
+      const parent = feedRef.current.closest(".arena-battleground");
+      if (parent) {
+        parent.querySelectorAll(".arena-battleground-col").forEach(col => {
+          if (col instanceof HTMLElement) col.scrollTop = 0;
+        });
+      }
     }
     prevTradeCountRef.current = count;
   }, [snapshot?.live?.trades.length]);
 
-  // Fallback poll during live phases
   useEffect(() => {
     if (!snapshot?.live?.match.id) return;
     const phase = snapshot.live.phase;
-    const isLive = phase === "warmup" || phase === "opening_window" || phase === "midgame" || phase === "closing_window" || phase === "live";
+    const isLive = phase === "warmup" || phase === "opening_window" || phase === "midgame" || phase === "cycle_out" || phase === "live";
     if (!isLive) return;
 
     const id = setInterval(() => { void refreshSnapshot(); }, 5000);
     return () => clearInterval(id);
   }, [snapshot?.live?.match.id, snapshot?.live?.phase, refreshSnapshot]);
-
-  // Fetch creation context alongside snapshot
-  useEffect(() => {
-    if (!ready || !authenticated) return;
-    queueMicrotask(async () => {
-      try {
-        const token = await getAccessToken();
-        if (!token) return;
-        const res = await fetch("/api/matches/create", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          const ctx = await res.json() as MatchCreationContext;
-          setCreationCtx(ctx);
-          setWagerUsd(ctx.suggestedTerms.wagerUsd);
-          setDurationSeconds(ctx.suggestedTerms.durationSeconds);
-          setStartingCapitalUsd(ctx.suggestedTerms.startingCapitalUsd);
-        }
-      } catch {
-        // non-critical
-      }
-    });
-  }, [ready, authenticated, getAccessToken]);
-
-  const handleCreateInvite = async () => {
-    setCreating(true);
-    setInviteLink(null);
-    setActionError(null);
-    try {
-      const result = await fetchJson<{ inviteLink: string; inviteToken: string }>("/api/matches", {
-        method: "POST",
-        body: JSON.stringify({
-          scopeType: inviteScope,
-          scopedEnsName: inviteScope === "ens" ? inviteEnsName : undefined,
-          wagerUsd,
-          durationSeconds,
-          startingCapitalUsd,
-        }),
-      });
-      setInviteLink(result.inviteLink);
-      await refreshSnapshot();
-      try {
-        const token = await getAccessToken();
-        const res = await fetch("/api/matches/create", {
-          headers: { Authorization: `Bearer ${token}` },
-        });
-        if (res.ok) {
-          setCreationCtx(await res.json() as MatchCreationContext);
-        }
-      } catch { /* non-critical */ }
-    } catch (err) {
-      setActionError(err instanceof Error ? err.message : "Match creation failed.");
-    } finally {
-      setCreating(false);
-    }
-  };
 
   const handleRevokeInvite = async (inviteId: string) => {
     setActionError(null);
@@ -338,8 +214,6 @@ export function ArenaPanel() {
       setActionError(err instanceof Error ? err.message : "Revoke failed.");
     }
   };
-
-  // ─── Loading / Auth states ─────────────────────────────
 
   if (!ready || loading) {
     return (
@@ -361,21 +235,22 @@ export function ArenaPanel() {
     );
   }
 
-  const { viewer, readiness, activeMatch, openInvite, live } = snapshot ?? {
+  const { viewer: _viewer, readiness, activeMatch, openInvite, live } = snapshot ?? {
     viewer: { userId: "", agentId: "", userEnsName: "", agentEnsName: "", agentTopic: "" },
     readiness: { hasUser: false, hasAgent: false, hasSmartAccount: false, hasMcpApproval: false, hasUserEns: false, hasAgentEns: false, ready: false, blockers: [] },
     activeMatch: null,
+    recentSettledMatch: null,
+    recentSettledPortfolios: null,
     openInvite: null,
     live: null,
   };
+  const recentSettledMatch = snapshot?.recentSettledMatch ?? null;
+  const recentSettledPortfolios = snapshot?.recentSettledPortfolios ?? null;
 
   const snapshotAge = Math.max(0, Math.floor((now - snapshotLoadedAt) / 1000));
   const localRemaining = live ? Math.max(0, live.remainingSeconds - snapshotAge) : 0;
-
-  // Combined token info map: address → { symbol, decimals }
   const tokenInfoMap = new Map(live?.allowedTokens?.map(t => [t.address.toLowerCase(), { symbol: t.symbol, decimals: t.decimals }]) ?? []);
 
-  // Agent info map with addresses
   const agentMap = new Map<string, { agentEns: string; userEns: string; seat: "creator" | "opponent"; address: string }>();
   if (activeMatch) {
     agentMap.set(activeMatch.creator.agentId, {
@@ -394,22 +269,21 @@ export function ArenaPanel() {
     }
   }
 
-  const isViewerCreator = activeMatch?.viewerSeat === "creator";
-
   const creatorPortfolio = live?.creatorPortfolio ?? null;
   const opponentPortfolio = live?.opponentPortfolio ?? null;
-  const creatorTrades = (live?.trades ?? []).filter(t => t.seat === "creator" && t.status === "accepted");
-  const opponentTrades = (live?.trades ?? []).filter(t => t.seat === "opponent" && t.status === "accepted");
-
   const creatorInfo = activeMatch?.creator ? agentMap.get(activeMatch.creator.agentId) ?? null : null;
   const opponentInfo = activeMatch?.opponent ? agentMap.get(activeMatch.opponent.agentId) ?? null : null;
+  const allTrades = (live?.trades ?? [])
+    .filter(t => t.status === "accepted")
+    .sort((a, b) => new Date(b.acceptedAt).getTime() - new Date(a.acceptedAt).getTime());
 
   return (
     <div className="flex h-full min-h-0 flex-1 flex-col overflow-hidden bg-[#fafaf8]">
-      {/* ═══ HEADER STRIP ═══ */}
-      <header className="flex items-center justify-between px-5 py-3 border-b-3 border-black bg-white">
+      <header className="flex items-center justify-between px-5 py-2.5 border-b-3 border-black bg-white">
         <div className="flex items-center gap-3">
-          <h1 className="font-display text-lg font-black uppercase tracking-tight text-black">Match</h1>
+          <span className={`arena-phase-tag ${live ? (phaseInfo(live.phase).isLive ? "live" : "") : ""}`}>
+            {live ? phaseInfo(live.phase).label : "ARENA"}
+          </span>
           <LiveDot connected={connected} />
           {snapshot && (
             <span className="text-[11px] font-mono font-bold tabular-nums text-artemis-silver">
@@ -418,30 +292,42 @@ export function ArenaPanel() {
           )}
         </div>
         <div className="flex items-center gap-3">
-          {viewer.userEnsName && (
-            <span className="font-label text-[13px] text-artemis-charcoal/70">{viewer.userEnsName}</span>
+          {live && (
+            <span className={`arena-timer-count ${localRemaining <= 30 ? "urgent" : ""}`}>
+              {fmtMmSs(localRemaining)}
+            </span>
           )}
-          {viewer.agentEnsName && (
-            <span className="arena-role-badge arena-role-badge-creator text-[11px] !px-3 !py-1">{viewer.agentEnsName}</span>
+          {activeMatch && (
+            <span className="arena-wager-badge">${activeMatch.wagerUsd} WAGER</span>
           )}
         </div>
       </header>
 
-      {/* Readiness blockers */}
-      {!readiness.ready && readiness.blockers.length > 0 && (
-        <div className="px-5 py-4 border-b-3 border-black bg-[#fff5e6]">
-          <span className="text-[11px] font-label font-bold uppercase tracking-widest text-black block mb-2">Setup Required</span>
-          <div className="flex flex-wrap gap-2">
-            {readiness.blockers.map((b, i) => (
-              <span key={i} className="text-[12px] font-label text-artemis-charcoal bg-white px-3 py-1.5 rounded-lg border-2 border-black">{b}</span>
-            ))}
-          </div>
+      {!activeMatch && openInvite && openInvite.status === "open" && (
+        <div className="flex items-center gap-2 px-4 py-2 border-b-3 border-black bg-[#fafaf8]">
+          <span className="text-[10px] font-label font-bold uppercase tracking-widest text-artemis-charcoal/50 shrink-0">Invite</span>
+          <span className="text-[11px] font-mono text-artemis-charcoal truncate flex-1">
+            {`${process.env.NEXT_PUBLIC_APP_URL ?? ""}/invite/${openInvite.inviteToken}`}
+          </span>
+          <button
+            type="button"
+            onClick={() => void navigator.clipboard.writeText(`${process.env.NEXT_PUBLIC_APP_URL ?? ""}/invite/${openInvite.inviteToken}`)}
+            className="text-[10px] font-label font-bold uppercase bg-artemis-red text-white px-2.5 py-1 rounded border-2 border-black shrink-0 hover:bg-artemis-red-light transition-colors"
+          >
+            Copy
+          </button>
+          <button
+            type="button"
+            onClick={() => void handleRevokeInvite(openInvite.id)}
+            className="text-[10px] font-label font-bold uppercase text-artemis-red/50 hover:text-artemis-red transition-colors shrink-0 underline underline-offset-2"
+          >
+            Revoke
+          </button>
         </div>
       )}
 
-      {/* Action error */}
       {actionError && (
-        <div className="px-5 py-3 border-b-3 border-black bg-artemis-red/10">
+        <div className="px-5 py-2 border-b-3 border-black bg-artemis-red/10">
           <div className="flex items-center justify-between">
             <span className="text-[12px] font-label font-bold text-artemis-red">{actionError}</span>
             <button type="button" onClick={() => setActionError(null)} className="text-[10px] font-label font-bold uppercase text-artemis-red/60 hover:text-artemis-red transition-colors">Dismiss</button>
@@ -449,388 +335,258 @@ export function ArenaPanel() {
         </div>
       )}
 
-      {/* ── MAIN CONTENT — match view only ═══ */}
       {activeMatch ? (
-        <div className="flex-1 min-w-0 min-h-0">
-          <MatchView
-            match={activeMatch}
-            live={live}
-            localRemaining={localRemaining}
-            creatorInfo={creatorInfo}
-            opponentInfo={opponentInfo}
-            creatorPortfolio={creatorPortfolio}
-            opponentPortfolio={opponentPortfolio}
-            creatorTrades={creatorTrades}
-            opponentTrades={opponentTrades}
-            tokenInfoMap={tokenInfoMap}
-            isViewerCreator={isViewerCreator}
-            mandatoryWindowResults={live?.mandatoryWindowResults ?? []}
-            feedRef={feedRef}
-            snapshotAge={snapshotAge}
-          />
-        </div>
+        <MatchHud
+          match={activeMatch}
+          live={live}
+          creatorInfo={creatorInfo}
+          opponentInfo={opponentInfo}
+          creatorPortfolio={creatorPortfolio}
+          opponentPortfolio={opponentPortfolio}
+          allTrades={allTrades}
+          tokenInfoMap={tokenInfoMap}
+          eventLog={live?.eventLog ?? []}
+          feedRef={feedRef}
+        />
       ) : (
-        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 bg-white">
-          {openInvite ? (
-            <div className="max-w-md text-center space-y-3">
-              <span className="font-display text-xl font-black uppercase tracking-tight text-black">Invite Pending</span>
-              <div className="flex items-center gap-2 bg-white rounded-lg px-4 py-2.5 border-2 border-black mx-auto w-fit">
-                <span className={`text-[11px] font-mono px-2 py-1 rounded border-2 border-black ${openInvite.status === "open" ? "bg-white text-black" : "bg-artemis-blue text-white"}`}>
-                  {openInvite.status.toUpperCase()}
-                </span>
-                <span className="text-[12px] font-label text-artemis-charcoal">${openInvite.wagerUsd} wager</span>
-              </div>
-              {openInvite.status === "open" && (
-                <div className="flex flex-col items-center gap-2 mt-2">
-                  <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2.5 border-2 border-black w-full max-w-sm">
-                    <span className="text-[11px] font-mono text-artemis-charcoal truncate flex-1 text-left">{`${process.env.NEXT_PUBLIC_APP_URL ?? ""}/invite/${openInvite.inviteToken}`}</span>
-                    <button
-                      type="button"
-                      onClick={() => void navigator.clipboard.writeText(`${process.env.NEXT_PUBLIC_APP_URL ?? ""}/invite/${openInvite.inviteToken}`)}
-                      className="text-[10px] font-label font-bold text-artemis-red uppercase hover:text-artemis-red-light transition-colors shrink-0"
-                    >
-                      Copy
-                    </button>
-                  </div>
-                  <p className="text-[12px] font-body text-artemis-charcoal/50">Share this link with your opponent</p>
-                </div>
-              )}
-              <p className="text-[13px] font-body text-artemis-charcoal/60">Waiting for opponent to join...</p>
-            </div>
-          ) : readiness.ready ? (
-            <div className="max-w-md text-center space-y-3">
-              <span className="font-display text-2xl font-black uppercase tracking-tight text-black">No Active Match</span>
-              <p className="text-[14px] font-body text-artemis-charcoal/55">Create a match from the main view to start trading</p>
-            </div>
-          ) : (
-            <div className="max-w-sm text-center space-y-2">
-              <span className="font-display text-lg font-black uppercase tracking-tight text-artemis-charcoal/40">Arena Locked</span>
-              <p className="text-[13px] font-body text-artemis-silver">Complete setup to enter matches</p>
-            </div>
-          )}
-        </div>
+        <NoMatchView
+          openInvite={openInvite}
+          readiness={readiness}
+          onRevoke={handleRevokeInvite}
+        />
+      )}
+
+      {recentSettledMatch && recentSettledPortfolios && !resultDismissed && (
+        <MatchResultModal
+          open
+          onClose={() => setResultDismissed(true)}
+          match={recentSettledMatch}
+          creatorPortfolio={recentSettledPortfolios.creator}
+          opponentPortfolio={recentSettledPortfolios.opponent}
+        />
       )}
     </div>
   );
 }
 
 // ══════════════════════════════════════════════════════════
-// MATCH VIEW — distinct section inside the same dialog
+// MATCH HUD — VS Arena + Trade Feed
 // ══════════════════════════════════════════════════════════
 
-function MatchView({
-  match,
+function MatchHud({
   live,
-  localRemaining,
   creatorInfo,
   opponentInfo,
   creatorPortfolio,
   opponentPortfolio,
-  creatorTrades,
-  opponentTrades,
+  allTrades,
   tokenInfoMap,
-  isViewerCreator,
-  mandatoryWindowResults,
+  eventLog,
   feedRef,
-  snapshotAge,
 }: {
   match: MatchView;
   live: ArenaSnapshot["live"];
-  localRemaining: number;
   creatorInfo: { agentEns: string; userEns: string; seat: "creator" | "opponent"; address: string } | null;
   opponentInfo: { agentEns: string; userEns: string; seat: "creator" | "opponent"; address: string } | null;
   creatorPortfolio: PortfolioView | null;
   opponentPortfolio: PortfolioView | null;
-  creatorTrades: EnrichedTrade[];
-  opponentTrades: EnrichedTrade[];
+  allTrades: EnrichedTrade[];
   tokenInfoMap: Map<string, { symbol: string; decimals: number }>;
-  isViewerCreator: boolean;
-  mandatoryWindowResults: NonNullable<ArenaSnapshot["live"]>["mandatoryWindowResults"];
+  eventLog: ArenaEventLogEntry[];
   feedRef: React.RefObject<HTMLDivElement | null>;
-  snapshotAge: number;
 }) {
-  const phase = live?.phase ?? match.status;
-  const { label: phaseLabel, active: phaseActive, isLive } = phaseInfo(phase);
-
   const creatorScore = creatorPortfolio?.netScorePercent ?? 0;
   const opponentScore = opponentPortfolio?.netScorePercent ?? 0;
   const creatorWinning = creatorScore > opponentScore;
+  const scoresEqual = creatorScore === opponentScore;
+
+  const creatorBarWidth = scoresEqual
+    ? 50
+    : Math.max(5, Math.min(95, 50 + (creatorScore - opponentScore) * 100 * 8));
+
+  const opponentBarWidth = 100 - creatorBarWidth;
+
+  const creatorTrades = allTrades.filter(t => t.seat === "creator");
+  const opponentTrades = allTrades.filter(t => t.seat === "opponent");
+  const statsSyncEvent = [...eventLog].reverse().find((event) =>
+    event.eventType === "agent_stats.syncing" ||
+    event.eventType === "agent_stats.synced" ||
+    event.eventType === "agent_stats.sync_deferred"
+  );
 
   return (
     <div className="flex-1 flex flex-col min-h-0 overflow-hidden">
-      {/* ═══ MATCH HEADER — phase, VS identities, timer ═══ */}
-      <div className="flex items-center justify-between px-5 py-3 border-b-3 border-black bg-white">
-        <div className="flex items-center gap-3">
-          <span className={`arena-phase-tag ${phaseActive && isLive ? "live" : ""}`} style={{ fontSize: "12px", padding: "5px 16px" }}>{phaseLabel}</span>
-
-          <div className="flex items-center gap-2">
-            <div className="flex flex-col">
-              <span className={`font-display font-black tracking-tight truncate max-w-[140px] ${isViewerCreator ? "text-artemis-red" : "text-black"}`}
-                style={{ fontSize: "15px" }}
-                title={creatorInfo?.agentEns}>
-                {creatorInfo?.agentEns ?? "---"}
-              </span>
-              {creatorInfo?.address && (
-                <span className="font-mono text-[10px] text-artemis-silver truncate max-w-[140px]" title={creatorInfo.address}>
-                  {shortAddr(creatorInfo.address)}
-                </span>
-              )}
-            </div>
-
-            <span className="font-display text-xl font-black tracking-tight text-artemis-charcoal/40">VS</span>
-
-            <div className="flex flex-col">
-              <span className={`font-display font-black tracking-tight truncate max-w-[140px] ${!isViewerCreator ? "text-artemis-red" : "text-black"}`}
-                style={{ fontSize: "15px" }}
-                title={opponentInfo?.agentEns}>
-                {opponentInfo?.agentEns ?? "---"}
-              </span>
-              {opponentInfo?.address && (
-                <span className="font-mono text-[10px] text-artemis-silver truncate max-w-[140px]" title={opponentInfo.address}>
-                  {shortAddr(opponentInfo.address)}
-                </span>
-              )}
-            </div>
-          </div>
+      <div className="arena-scoreboard">
+        <div className="arena-scoreboard-players">
+          <PlayerIdentity
+            agentEns={creatorInfo?.agentEns ?? null}
+            portfolio={creatorPortfolio}
+            score={creatorScore}
+            isWinner={creatorWinning && !scoresEqual}
+            borderRight
+          />
+          <PlayerIdentity
+            agentEns={opponentInfo?.agentEns ?? null}
+            portfolio={opponentPortfolio}
+            score={opponentScore}
+            isWinner={!creatorWinning && !scoresEqual}
+          />
+          <span className="arena-vs-badge">VS</span>
         </div>
 
-        {phaseActive ? (
-          <div className="flex items-baseline gap-2">
-            <span className={`arena-timer-count ${localRemaining <= 30 ? "urgent" : ""}`}
-              style={{ fontSize: "42px" }}>{fmtMmSs(localRemaining)}</span>
-            <span className="arena-timer-label" style={{ fontSize: "11px" }}>remaining</span>
-            <span className="text-[10px] font-mono text-artemis-silver/50 tabular-nums ml-2">
-              elapsed {fmtMmSs(live ? live.elapsedSeconds + snapshotAge : 0)}
-            </span>
+        <div className="arena-scoreboard-tug">
+          <div className="arena-tug-bar">
+            <div
+              className="arena-tug-fill-creator"
+              style={{ width: `${creatorBarWidth}%` }}
+            />
+            <div
+              className="arena-tug-fill-opponent"
+              style={{ width: `${opponentBarWidth}%` }}
+            />
           </div>
-        ) : (
-          <div className="flex items-center gap-3">
-            <span className={`arena-result-text ${creatorWinning ? "creator-wins" : "challenger-wins"}`}
-              style={{ fontSize: "16px" }}>
-              {creatorWinning ? "Creator Wins" : "Challenger Wins"}
-            </span>
-            <span className={`text-[13px] font-label font-bold tabular-nums ${pnlClass(creatorScore - opponentScore) === "positive" ? "text-artemis-red" : pnlClass(creatorScore - opponentScore) === "negative" ? "text-artemis-charcoal" : "text-artemis-silver"}`}>
-              {pnlSign(creatorScore - opponentScore)}{((creatorScore - opponentScore) * 100).toFixed(2)}%
-            </span>
-          </div>
-        )}
+        </div>
       </div>
 
-      {/* ═══ VS SPLIT — unified player columns ═══ */}
-      <div className="arena-vs-grid" style={{ gridTemplateColumns: "1fr 52px 1fr" }}>
-        <PlayerColumn
-          isViewerSide={isViewerCreator}
-          portfolio={creatorPortfolio}
-          trades={creatorTrades}
-          tokenInfoMap={tokenInfoMap}
-          isLeading={creatorWinning}
-          isSettled={!phaseActive}
-          feedRef={feedRef}
-          info={creatorInfo}
-        />
+      {statsSyncEvent && (
+        <div className="border-b-3 border-black bg-[#fafaf8] px-4 py-2">
+          <span className="font-label text-[10px] font-bold uppercase tracking-widest text-artemis-charcoal/60">
+            {statsSyncEvent.eventType === "agent_stats.synced"
+              ? "Agent ENS stats synced"
+              : statsSyncEvent.eventType === "agent_stats.sync_deferred"
+                ? "Agent ENS stats queued"
+                : "Agent ENS stats syncing"}
+          </span>
+        </div>
+      )}
 
-        <div className="arena-vs-divider" style={{ paddingTop: "20px" }}>
-          {!phaseActive && (
-            <div className="mt-3 mb-2 text-center">
-              <span className={`text-[12px] font-label font-bold tabular-nums ${pnlClass(creatorScore - opponentScore) === "positive" ? "text-artemis-red" : pnlClass(creatorScore - opponentScore) === "negative" ? "text-artemis-charcoal" : "text-artemis-silver"}`}>
-                {pnlSign(creatorScore - opponentScore)}{((creatorScore - opponentScore) * 100).toFixed(2)}%
-              </span>
-            </div>
+      <div className="arena-battleground">
+        <div
+          ref={feedRef}
+          className="arena-battleground-col arena-battleground-creator"
+        >
+          {creatorTrades.length === 0 ? (
+            <BattlegroundEmptyState />
+          ) : (
+            creatorTrades.map(trade => (
+              <TradeActionCard key={trade.id} trade={trade} tokenInfoMap={tokenInfoMap} seat="creator" />
+            ))
           )}
         </div>
-
-        <PlayerColumn
-          isViewerSide={!isViewerCreator}
-          portfolio={opponentPortfolio}
-          trades={opponentTrades}
-          tokenInfoMap={tokenInfoMap}
-          isLeading={!creatorWinning}
-          isSettled={!phaseActive}
-          feedRef={feedRef}
-          info={opponentInfo}
-        />
+        <div className="arena-battleground-divider" />
+        <div className="arena-battleground-col arena-battleground-opponent">
+          {opponentTrades.length === 0 ? (
+            <BattlegroundEmptyState />
+          ) : (
+            opponentTrades.map(trade => (
+              <TradeActionCard key={trade.id} trade={trade} tokenInfoMap={tokenInfoMap} seat="opponent" />
+            ))
+          )}
+        </div>
       </div>
-
-      {/* ═══ Footer bar ═══ */}
-      <footer className="arena-footer-bar" style={{ padding: "10px 16px" }}>
-        <div className="flex items-center gap-3">
-          {!phaseActive && (
-            <span className="text-[11px] font-label font-bold uppercase tracking-wider text-artemis-charcoal">
-              ${match.wagerUsd.toFixed(0)} &middot; ${match.startingCapitalUsd.toFixed(0)} capital
-            </span>
-          )}
-          {phaseActive && (
-            <span className="text-[11px] font-label text-artemis-silver tabular-nums hidden sm:block">
-              {fmtMmSs(live ? live.elapsedSeconds + snapshotAge : 0)} elapsed
-            </span>
-          )}
-        </div>
-
-        {mandatoryWindowResults.length > 0 && (
-          <div className="flex items-center gap-2">
-            {mandatoryWindowResults.map((w: { completed: boolean; penaltyUsd: number; windowName: string }, i: number) => (
-              <span key={i} className={`arena-window-pill ${w.completed ? "done" : "missed"}`}>
-                {w.windowName === "opening_window" ? "OPEN" : "CLOSE"} {w.completed ? "✓" : `-$${w.penaltyUsd.toFixed(2)}`}
-              </span>
-            ))}
-          </div>
-        )}
-      </footer>
     </div>
   );
 }
 
 // ══════════════════════════════════════════════════════════
-// PLAYER COLUMN — merged identity + score + holdings + trades
+// PLAYER IDENTITY — score block for one side
 // ══════════════════════════════════════════════════════════
 
-function PlayerColumn({
-  isViewerSide,
+function PlayerIdentity({
+  agentEns,
   portfolio,
-  trades,
-  tokenInfoMap,
-  isLeading,
-  isSettled,
-  feedRef,
-  info,
+  score,
+  isWinner,
+  borderRight,
 }: {
-  isViewerSide: boolean;
+  agentEns: string | null;
   portfolio: PortfolioView | null;
-  trades: EnrichedTrade[];
-  tokenInfoMap: Map<string, { symbol: string; decimals: number }>;
-  isLeading: boolean;
-  isSettled: boolean;
-  feedRef: React.RefObject<HTMLDivElement | null>;
-  info: { agentEns: string; userEns: string; seat: "creator" | "opponent"; address: string } | null;
+  score: number;
+  isWinner: boolean;
+  borderRight?: boolean;
 }) {
-  const isYourSide = isViewerSide;
+  return (
+    <div
+      className={`arena-player-identity ${isWinner ? "is-winner" : ""} ${borderRight ? "border-r-3 border-black" : ""}`}
+    >
+      <span
+        className="font-display font-black tracking-tight text-center text-black"
+        style={{ fontSize: "18px" }}
+        title={agentEns ?? undefined}
+      >
+        {agentEns ? firstLabel(agentEns) : "---"}
+      </span>
+      <span
+        className="font-display font-black tabular-nums"
+        style={{
+          fontSize: portfolio ? "64px" : "48px",
+          lineHeight: 1,
+          letterSpacing: "-0.03em",
+          color: score > 0 ? "var(--artemis-red)" : score < 0 ? "var(--artemis-charcoal)" : "var(--artemis-silver)",
+        }}
+      >
+        {portfolio ? `${pnlSign(score)}${(score * 100).toFixed(2)}%` : "---%"}
+      </span>
+      {portfolio && (
+        <span className="font-label text-[12px] font-bold tabular-nums text-artemis-charcoal">
+          ${portfolio.currentValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+        </span>
+      )}
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// BATTLEGROUND EMPTY STATE — dashed-border waiting box
+// ══════════════════════════════════════════════════════════
+
+function BattlegroundEmptyState() {
+  return (
+    <div className="arena-battleground-empty">
+      <span className="arena-battleground-empty-text">Waiting for agent execution...</span>
+    </div>
+  );
+}
+
+// ══════════════════════════════════════════════════════════
+// TRADE ACTION CARD — per-seat brutalist card
+// ══════════════════════════════════════════════════════════
+
+function TradeActionCard({
+  trade,
+  tokenInfoMap,
+  seat,
+}: {
+  trade: EnrichedTrade;
+  tokenInfoMap: Map<string, { symbol: string; decimals: number }>;
+  seat: "creator" | "opponent";
+}) {
+  const inInfo = tokenInfoMap.get(trade.tokenIn.toLowerCase());
+  const outInfo = tokenInfoMap.get(trade.tokenOut.toLowerCase());
+  const inSym = inInfo?.symbol ?? "?";
+  const outSym = outInfo?.symbol ?? "?";
+  const inDecimals = inInfo?.decimals ?? 18;
+  const outDecimals = outInfo?.decimals ?? 18;
+  const amountIn = formatAmount(trade.amountIn, inDecimals);
+  const amountOut = formatAmount(trade.simulatedAmountOut || trade.quotedAmountOut, outDecimals);
+  const sideLabel = (trade.tradeSide ?? "buy").toUpperCase();
+  const pnl = trade.realizedPnlUsd;
 
   return (
-    <div className={`arena-player-col ${isYourSide ? "is-viewer" : ""}`}>
-      {/* ═══ Identity + Address ═══ */}
-      <div className="px-4 py-3 border-b-2 border-black/20 bg-white">
-        <div className="flex items-center justify-between gap-2">
-          <div className="min-w-0">
-            <span className={`font-display font-black truncate block ${isYourSide ? "text-artemis-red" : "text-black"}`}
-              style={{ fontSize: "15px" }}>
-              {info?.agentEns ?? "---"}
-            </span>
-            {info?.address && (
-              <span className="font-mono text-[11px] text-artemis-charcoal/50 block mt-0.5" title={info.address}>
-                {info.address}
-              </span>
-            )}
-          </div>
-          {isYourSide && (
-            <span className="arena-you-chip shrink-0">YOU</span>
-          )}
-        </div>
+    <div className="arena-trade-action-card">
+      <div className="arena-trade-action-row-top">
+        <span className={`arena-trade-action-side ${seat}`}>{sideLabel}</span>
+        <span className="arena-trade-action-asset">{outSym}</span>
+        <span className="arena-trade-action-price">
+          {trade.outputValueUsd != null ? `$${trade.outputValueUsd.toFixed(2)}` : "---"}
+        </span>
       </div>
-
-      {/* ═══ Score Block — hero numbers ═══ */}
-      <div className="arena-score-block" style={{ padding: "14px 16px" }}>
-        {portfolio ? (
-          <>
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="arena-score-label" style={{ fontSize: "11px" }}>Net Score</span>
-              {isSettled && isLeading && (
-                <span className="arena-status-badge lead" style={{ fontSize: "10px", padding: "2px 10px" }}>LEADING</span>
-              )}
-              {!isSettled && portfolio.netScorePercent > 0 && (
-                <span className="arena-status-badge up" style={{ fontSize: "10px", padding: "2px 10px" }}>UP</span>
-              )}
-            </div>
-            <div className="flex items-baseline gap-2 flex-wrap">
-              {portfolio.balances.some(b => b.symbol !== "USDC") && (
-                <div className="flex flex-wrap gap-1">
-                  {portfolio.balances.filter(b => b.symbol !== "USDC").map((b) => (
-                    <span key={b.tokenAddress}
-                      className="inline-flex items-center font-label px-2 py-0.5 rounded border-2 text-[11px] border-black/20 bg-white text-artemis-charcoal">
-                      {b.symbol}
-                      <span className="text-[9px] text-artemis-silver ml-0.5">${b.valueUsd.toFixed(0)}</span>
-                    </span>
-                  ))}
-                </div>
-              )}
-              <span className={`arena-score-value ${pnlClass(portfolio.netScorePercent)}`}
-                style={{ fontSize: Math.abs(portfolio.netScorePercent) >= 0.01 ? "44px" : "34px" }}>
-                {pnlSign(portfolio.netScorePercent)}{(portfolio.netScorePercent * 100).toFixed(2)}%
-              </span>
-            </div>
-            <div className="arena-score-row" style={{ marginTop: "10px", gap: "14px" }}>
-              <span className="arena-score-current" style={{ fontSize: "17px" }}>
-                ${portfolio.currentValueUsd.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-              <span className={`arena-score-pnl ${pnlClass(portfolio.totalPnlUsd)}`} style={{ fontSize: "15px" }}>
-                {pnlSign(portfolio.totalPnlUsd)}${Math.abs(portfolio.totalPnlUsd).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-              </span>
-            </div>
-            {portfolio.penaltiesUsd > 0 && (
-              <span className="arena-penalty-tag" style={{ marginTop: "8px", fontSize: "12px" }}>-${portfolio.penaltiesUsd.toFixed(2)} penalties</span>
-            )}
-          </>
-        ) : (
-          <>
-            <span className="arena-score-label">Net Score</span>
-            <span className="arena-score-value neutral" style={{ fontSize: "38px" }}>---%</span>
-            <span className="arena-pilot-line mt-2 block" style={{ fontSize: "12px" }}>Valuing...</span>
-          </>
-        )}
-      </div>
-
-      {/* ═══ Trade Activity Feed ═══ */}
-      <div ref={isViewerSide ? feedRef : undefined} className="arena-trade-feed">
-        {trades.length === 0 ? (
-          <div className="arena-trade-empty">
-            <span className="arena-trade-empty-title" style={{ fontSize: "14px" }}>No Trades Yet</span>
-            <span className="arena-trade-empty-sub" style={{ fontSize: "13px" }}>Waiting for action...</span>
-          </div>
-        ) : (
-          <div className="py-2">
-            {trades.map((trade) => {
-              const inInfo = tokenInfoMap.get(trade.tokenIn.toLowerCase());
-              const outInfo = tokenInfoMap.get(trade.tokenOut.toLowerCase());
-              const inSym = inInfo?.symbol ?? "?";
-              const outSym = outInfo?.symbol ?? "?";
-              const inDecimals = inInfo?.decimals ?? 18;
-              const outDecimals = outInfo?.decimals ?? 18;
-              const amountIn = formatAmount(trade.amountIn, inDecimals);
-              const amountOut = formatAmount(trade.simulatedAmountOut || trade.quotedAmountOut, outDecimals);
-              const sideLabel = (trade.tradeSide ?? "buy").toUpperCase();
-
-              return (
-                <div key={trade.id} className={`arena-trade-card ${isYourSide ? "is-viewer" : ""}`}
-                  style={{ margin: "7px 12px", padding: "12px 14px" }}>
-                  <div className="arena-trade-header" style={{ marginBottom: "8px" }}>
-                    <div className="flex items-center gap-2 min-w-0">
-                      <span className={`arena-trade-side-badge ${
-                        sideLabel === "BUY" ? "buy" :
-                        sideLabel === "SELL" ? "sell" :
-                        "exit"
-                      }`} style={{ fontSize: "10px", padding: "3px 9px" }}>{sideLabel}</span>
-                      <div className="arena-trade-amounts">
-                        <span className="arena-trade-amount" style={{ fontSize: "14px" }}>{amountIn}</span>
-                        <span className="arena-trade-amount-symbol" style={{ fontSize: "12px" }}>{inSym}</span>
-                        <span className="arena-trade-arrow" style={{ fontSize: "14px" }}>&rsaquo;</span>
-                        <span className="arena-trade-amount-out" style={{ fontSize: "14px" }}>{amountOut}</span>
-                        <span className="arena-trade-amount-symbol" style={{ fontSize: "12px" }}>{outSym}</span>
-                      </div>
-                    </div>
-                    <span className="arena-trade-time" style={{ fontSize: "10px" }}>{timeAgo(trade.acceptedAt)}</span>
-                  </div>
-                  {trade.status === "accepted" && trade.realizedPnlUsd != null && trade.realizedPnlUsd !== 0 && (
-                    <span className={`arena-trade-pnl ${pnlClass(trade.realizedPnlUsd)}`}
-                      style={{ fontSize: "13px", padding: "4px 10px", marginTop: "8px" }}>
-                      {pnlSign(trade.realizedPnlUsd)}${Math.abs(trade.realizedPnlUsd).toFixed(2)}
-                    </span>
-                  )}
-                  {trade.status === "rejected" && trade.failureReason && (
-                    <span className="arena-trade-reject" style={{ fontSize: "11px", marginTop: "8px" }}>{trade.failureReason}</span>
-                  )}
-                </div>
-              );
-            })}
-          </div>
+      <div className="arena-trade-action-row-bottom">
+        <span className="arena-trade-action-swap">{amountIn} {inSym} → {amountOut} {outSym}</span>
+        {pnl != null && pnl !== 0 && (
+          <span className={`arena-trade-action-pnl ${pnlClass(pnl)}`}>
+            {pnlSign(pnl)}${Math.abs(pnl).toFixed(2)}
+          </span>
         )}
       </div>
     </div>
@@ -838,336 +594,102 @@ function PlayerColumn({
 }
 
 // ══════════════════════════════════════════════════════════
-// CREATE MATCH FORM — clean white neo-brutalist
+// NO MATCH VIEW — idle moon, pending invite, or locked
 // ══════════════════════════════════════════════════════════
 
-function CreateMatchForm({
-  creating,
-  creationCtx,
-  inviteScope,
-  setInviteScope,
-  inviteEnsName,
-  setInviteEnsName,
-  wagerUsd,
-  setWagerUsd,
-  durationSeconds,
-  setDurationSeconds,
-  startingCapitalUsd,
-  setStartingCapitalUsd,
-  inviteLink,
-  onCreate,
+function NoMatchView({
   openInvite,
+  readiness,
   onRevoke,
-  readinessReady,
-  compact = false,
 }: {
-  creating: boolean;
-  creationCtx: MatchCreationContext | null;
-  inviteScope: "open" | "ens";
-  setInviteScope: (v: "open" | "ens") => void;
-  inviteEnsName: string;
-  setInviteEnsName: (v: string) => void;
-  wagerUsd: number;
-  setWagerUsd: (v: number) => void;
-  durationSeconds: number;
-  setDurationSeconds: (v: number) => void;
-  startingCapitalUsd: number;
-  setStartingCapitalUsd: (v: number) => void;
-  inviteLink: string | null;
-  onCreate: () => void;
   openInvite: ArenaSnapshot["openInvite"];
+  readiness: ArenaSnapshot["readiness"];
   onRevoke: (id: string) => void;
-  readinessReady: boolean;
-  compact?: boolean;
 }) {
-  const constraints = creationCtx?.constraints ?? {
-    wagerUsd: [10],
-    durationSeconds: [180, 300, 600],
-    startingCapitalUsd: [100, 250, 500],
-    warmupSeconds: [30],
-    scopeTypes: ["open", "ens"],
-  };
+  const [copied, setCopied] = useState(false);
 
-  function fmtDuration(s: number): string {
-    const m = Math.floor(s / 60);
-    return m < 2 ? `${s}s` : `${m}m`;
-  }
+  if (openInvite) {
+    const inviteUrl = `${process.env.NEXT_PUBLIC_APP_URL ?? ""}/invite/${openInvite.inviteToken}`;
 
-  const preferenceSummary = creationCtx?.ensPreference
-    ? formatPreferenceSummary(creationCtx.ensPreference)
-    : null;
+    const handleCopy = () => {
+      void navigator.clipboard.writeText(inviteUrl).then(() => {
+        setCopied(true);
+        setTimeout(() => setCopied(false), 2000);
+      });
+    };
 
-  if (compact) {
     return (
-      <div className="flex h-full flex-col gap-0 overflow-y-auto bg-[#f5f5f0] p-4">
-        <div className="flex items-center justify-between border-b-2 border-black/20 pb-2 mb-3">
-          <span className="font-display text-[13px] font-black uppercase tracking-tight text-black">Create</span>
-          {openInvite && (
-            <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border border-black ${openInvite.status === "open" ? "bg-white" : "bg-artemis-blue text-white"}`}>
-              {openInvite.status.toUpperCase()}
-            </span>
-          )}
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 bg-white">
+        <span className="font-display text-xl font-black uppercase tracking-tight text-black">Invite Pending</span>
+        <div className="flex items-center gap-2">
+          <span className="arena-idle-term-chip">${openInvite.wagerUsd}</span>
+          <span className="arena-idle-term-chip">{Math.floor(openInvite.durationSeconds / 60)}m</span>
+          <span className="arena-idle-term-chip">${openInvite.startingCapitalUsd}</span>
         </div>
-
-        {openInvite && (
-          <div className="mb-3">
-            <button type="button"
-              onClick={() => void navigator.clipboard.writeText(`${process.env.NEXT_PUBLIC_APP_URL ?? ""}/invite/${openInvite.inviteToken}`)}
-              className="w-full text-left text-[11px] font-label text-artemis-charcoal bg-white rounded-lg px-2.5 py-2 border-2 border-black truncate hover:bg-neo-bg transition-colors">
-              Copy invite link
+        {openInvite.status === "open" && (
+          <>
+            <button
+              type="button"
+              onClick={handleCopy}
+              className="w-full max-w-md flex items-center gap-3 bg-white rounded-lg px-4 py-3 border-3 border-black shadow-[4px_4px_0_0_var(--artemis-blue)] hover:shadow-[5px_5px_0_0_var(--artemis-blue)] hover:translate-[-1px] transition-all cursor-pointer"
+            >
+              <span className="text-[12px] font-mono text-artemis-charcoal truncate flex-1 text-left select-all">
+                {inviteUrl}
+              </span>
+              <span className={`text-[11px] font-label font-bold uppercase tracking-wider shrink-0 px-3 py-1 rounded-md border-2 border-black transition-colors ${
+                copied
+                  ? "bg-artemis-red text-white"
+                  : "bg-artemis-red text-white"
+              }`}>
+                {copied ? "Copied!" : "Copy Link"}
+              </span>
             </button>
-            {openInvite.status === "open" && (
-              <button type="button" onClick={() => void onRevoke(openInvite.id)}
-                className="w-full mt-1.5 text-[10px] font-label font-bold text-artemis-red uppercase hover:text-artemis-red-light transition-colors">
+            <div className="flex items-center gap-3 mt-1">
+              <span className="arena-waiting-text">Waiting for opponent...</span>
+              <button
+                type="button"
+                onClick={() => void onRevoke(openInvite.id)}
+                className="text-[10px] font-label font-bold uppercase text-artemis-red/50 hover:text-artemis-red transition-colors underline underline-offset-2"
+              >
                 Revoke
               </button>
-            )}
-          </div>
-        )}
-
-        {!openInvite && readinessReady && (
-          <>
-            <div className="mb-2">
-              <span className="text-[9px] font-label font-bold uppercase tracking-widest text-artemis-charcoal/40 block mb-1.5">Opponent</span>
-              <div className="flex gap-1.5">
-                {(["open", "ens"] as const).map((scope) => (
-                  <button key={scope} type="button" onClick={() => setInviteScope(scope)}
-                    className={`flex-1 px-2 py-1.5 rounded border-2 border-black text-[10px] font-label font-bold uppercase tracking-wider transition-all ${
-                      inviteScope === scope ? "bg-black text-white shadow-[2px_2px_0_0_var(--artemis-blue)]" : "bg-white text-artemis-charcoal hover:bg-[#eee]"
-                    }`}>
-                    {scope === "open" ? "Open" : "ENS"}
-                  </button>
-                ))}
-              </div>
-              {inviteScope === "ens" && (
-                <input type="text" value={inviteEnsName} onChange={(e) => setInviteEnsName(e.target.value)}
-                  placeholder="ENS name"
-                  className="mt-1.5 w-full bg-white text-black text-[11px] font-label px-2 py-1.5 rounded border-2 border-black focus:border-artemis-blue focus:outline-none placeholder:text-artemis-silver/30" />
-              )}
             </div>
-
-            <div className="grid grid-cols-3 gap-1.5 mb-3">
-              {[{ label: "$", values: constraints.wagerUsd, val: wagerUsd, set: setWagerUsd },
-                { label: "", values: constraints.durationSeconds.map(fmtDuration), val: durationSeconds, set: setDurationSeconds },
-                { label: "$", values: constraints.startingCapitalUsd, val: startingCapitalUsd, set: setStartingCapitalUsd },
-              ].map(({ label, values, val, set }) => (
-                <div key={label + String(val)} className="flex flex-col gap-1">
-                  <select value={val} onChange={(e) => set(Number(e.target.value))}
-                    className="w-full bg-white text-black text-[11px] font-label font-bold tabular-nums px-1.5 py-1.5 rounded border-2 border-black focus:border-artemis-blue focus:outline-none">
-                    {values.map((v) => (
-                      <option key={v} value={v}>{label}{v}</option>
-                    ))}
-                  </select>
-                </div>
-              ))}
-            </div>
-
-            <button type="button" onClick={() => void onCreate()}
-              disabled={creating || (inviteScope === "ens" && !inviteEnsName.trim())}
-              className="neo-btn w-full py-2 text-[11px] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-x-0 disabled:translate-y-0">
-              {creating ? "Creating..." : "Create Match"}
-            </button>
-
-            {inviteLink && (
-              <div className="mt-2 flex items-center gap-1.5 bg-white rounded-lg px-2.5 py-2 border-2 border-black animate-trade-enter">
-                <span className="text-[9px] font-label font-bold uppercase text-artemis-red shrink-0">Ready</span>
-                <button type="button" onClick={() => void navigator.clipboard.writeText(inviteLink)}
-                  className="text-[11px] font-label text-artemis-charcoal truncate flex-1 text-left hover:text-black transition-colors">
-                  Copy link
-                </button>
-              </div>
-            )}
           </>
         )}
+        {openInvite.status !== "open" && (
+          <p className="arena-waiting-text">Waiting for opponent...</p>
+        )}
+      </div>
+    );
+  }
 
-        {!readinessReady && (
-          <p className="text-[11px] text-artemis-silver/50 text-center py-4">Setup required</p>
+  if (!readiness.ready) {
+    return (
+      <div className="flex-1 flex flex-col items-center justify-center gap-4 p-8 bg-white">
+        <div className="arena-idle-moon" style={{ width: 120, height: 120, opacity: 0.5 }} />
+        <span className="font-display text-lg font-black uppercase tracking-tight text-artemis-charcoal/40">Arena Locked</span>
+        <p className="text-[13px] font-body text-artemis-silver">Complete setup to enter matches</p>
+        {readiness.blockers.length > 0 && (
+          <div className="flex flex-wrap gap-2 justify-center">
+            {readiness.blockers.map((b, i) => (
+              <span key={i} className="arena-blocker-badge">{b}</span>
+            ))}
+          </div>
         )}
       </div>
     );
   }
 
   return (
-    <div className="flex-1 overflow-y-auto p-5">
-      <section className="mx-auto flex max-w-[520px] flex-col gap-4 rounded-xl border-3 border-black bg-white p-5 shadow-[6px_6px_0_0_var(--artemis-blue)]">
-        <div className="flex items-start justify-between gap-3 border-b-2 border-black pb-3">
-          <div>
-            <span className="font-display text-lg font-black uppercase tracking-tight text-black">Create Match</span>
-            {preferenceSummary && (
-              <p className="mt-1 text-[11px] font-label font-bold uppercase tracking-wide text-artemis-charcoal/55">
-                {preferenceSummary}
-              </p>
-            )}
-          </div>
-          {creationCtx?.ensPreference && (
-            <span className="shrink-0 rounded border-2 border-black bg-[#f0f0ec] px-2.5 py-1 text-[10px] font-label font-bold uppercase tracking-wider text-black">
-              ENS prefs
-            </span>
-          )}
-        </div>
-
-        {/* Open invite display — shown inline when exists */}
-        {openInvite && (
-          <div className="rounded-lg border-2 border-dashed border-artemis-charcoal/30 px-4 py-3 bg-[#fafaf8]">
-            <div className="flex items-center gap-2 mb-1.5">
-              <span className="text-[10px] font-label font-bold uppercase tracking-widest text-artemis-charcoal/40">Invite Active</span>
-              <span className={`text-[9px] font-mono px-1.5 py-0.5 rounded border-2 border-black ${openInvite.status === "open" ? "bg-white text-black" : "bg-artemis-blue text-white"}`}>
-                {openInvite.status.toUpperCase()}
-              </span>
-            </div>
-            <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2 mb-1.5 border-2 border-black">
-              <span className="text-[12px] font-label text-artemis-charcoal truncate flex-1">{`${process.env.NEXT_PUBLIC_APP_URL ?? ""}/invite/${openInvite.inviteToken}`}</span>
-              <button type="button"
-                onClick={() => void navigator.clipboard.writeText(`${process.env.NEXT_PUBLIC_APP_URL ?? ""}/invite/${openInvite.inviteToken}`)}
-                className="text-[10px] font-label font-bold text-artemis-red uppercase hover:text-artemis-red-light transition-colors shrink-0">
-                Copy
-              </button>
-            </div>
-            <div className="flex items-center gap-2">
-              <span className="text-[12px] font-label text-artemis-charcoal/55">${openInvite.wagerUsd} wager &middot; {fmtDuration(openInvite.durationSeconds)}</span>
-              {openInvite.status === "open" && (
-                <button type="button" onClick={() => void onRevoke(openInvite.id)}
-                  className="text-[10px] font-label font-bold text-artemis-red uppercase hover:text-artemis-red-light transition-colors">
-                  Revoke
-                </button>
-              )}
-            </div>
-          </div>
-        )}
-
-        {!openInvite && readinessReady && (
-          <>
-            <div>
-              <span className="text-[11px] font-label font-bold uppercase tracking-widest text-artemis-charcoal/50 block mb-2">Opponent</span>
-              <div className="flex gap-2">
-                {(["open", "ens"] as const).map((scope) => (
-                  <button
-                    key={scope}
-                    type="button"
-                    onClick={() => setInviteScope(scope)}
-                    className={`flex-1 px-3 py-2.5 rounded-lg border-2 border-black text-[12px] font-label font-bold uppercase tracking-wider transition-all ${
-                      inviteScope === scope
-                        ? "bg-black text-white shadow-[3px_3px_0_0_var(--artemis-blue)]"
-                        : "bg-white text-artemis-charcoal hover:bg-[#f5f5f0]"
-                    }`}
-                  >
-                    {scope === "open" ? "Anyone" : "ENS Target"}
-                  </button>
-                ))}
-              </div>
-              {inviteScope === "ens" && (
-                <input
-                  type="text"
-                  value={inviteEnsName}
-                  onChange={(e) => setInviteEnsName(e.target.value)}
-                  placeholder="e.g. vitally.moonjoy.eth"
-                  className="mt-2 w-full bg-white text-black text-[13px] font-label px-3 py-2.5 rounded-lg border-2 border-black focus:border-artemis-blue focus:outline-none placeholder:text-artemis-silver/30"
-                />
-              )}
-            </div>
-
-            <TermRow
-              label="Wager"
-              values={constraints.wagerUsd}
-              selected={wagerUsd}
-              onSelect={setWagerUsd}
-              format={(v) => `$${v}`}
-            />
-
-            <TermRow
-              label="Duration"
-              values={constraints.durationSeconds}
-              selected={durationSeconds}
-              onSelect={setDurationSeconds}
-              format={fmtDuration}
-            />
-
-            <TermRow
-              label="Capital"
-              values={constraints.startingCapitalUsd}
-              selected={startingCapitalUsd}
-              onSelect={setStartingCapitalUsd}
-              format={(v) => `$${v}`}
-            />
-
-            <div className="flex flex-col gap-3 sm:flex-row sm:items-center">
-              <div className="flex min-w-0 flex-1 items-center gap-2 rounded-lg border-2 border-black/15 bg-[#f8f8f6] px-3 py-2.5">
-                <span className="text-[10px] font-label font-bold uppercase tracking-widest text-artemis-charcoal/50">Stakes</span>
-                <span className="truncate text-[12px] font-label font-bold text-black tabular-nums">${wagerUsd} wager &middot; ${startingCapitalUsd} capital &middot; {fmtDuration(durationSeconds)}</span>
-              </div>
-              <button
-                type="button"
-                onClick={() => void onCreate()}
-                disabled={creating || (inviteScope === "ens" && !inviteEnsName.trim())}
-                className="neo-btn px-5 py-2.5 text-[12px] disabled:opacity-40 disabled:cursor-not-allowed disabled:shadow-none disabled:translate-x-0 disabled:translate-y-0"
-              >
-                {creating ? "Creating..." : "Create"}
-              </button>
-            </div>
-
-            {inviteLink && (
-              <div className="flex items-center gap-2 bg-white rounded-lg px-3 py-2.5 border-2 border-black animate-trade-enter">
-                <span className="text-[10px] font-label font-bold uppercase tracking-widest text-artemis-red">Link Ready</span>
-                <span className="text-[12px] font-label text-artemis-charcoal truncate flex-1">{inviteLink}</span>
-                <button
-                  type="button"
-                  onClick={() => void navigator.clipboard.writeText(inviteLink)}
-                  className="text-[10px] font-label font-bold text-artemis-red uppercase hover:text-artemis-red-light transition-colors shrink-0"
-                >
-                  Copy
-                </button>
-              </div>
-            )}
-          </>
-        )}
-
-        {!readinessReady && (
-          <div className="text-center py-6">
-            <p className="text-[13px] text-artemis-charcoal/55">Complete setup to create invites</p>
-          </div>
-        )}
-      </section>
-    </div>
-  );
-}
-
-// ─── Term Row — pill toggle selector for discrete values ─────
-
-function TermRow({
-  label,
-  values,
-  selected,
-  onSelect,
-  format,
-}: {
-  label: string;
-  values: readonly number[];
-  selected: number;
-  onSelect: (v: number) => void;
-  format: (v: number) => string;
-}) {
-  return (
-    <div>
-      <span className="text-[11px] font-label font-bold uppercase tracking-widest text-artemis-charcoal/50 block mb-2">{label}</span>
-      <div className="flex gap-2">
-        {values.map((v) => {
-          const isActive = v === selected;
-          return (
-            <button
-              key={v}
-              type="button"
-              onClick={() => onSelect(v)}
-              className={`flex-1 px-3 py-2 rounded-lg border-2 border-black text-[13px] font-label font-bold tabular-nums transition-all ${
-                isActive
-                  ? "bg-black text-white shadow-[3px_3px_0_0_var(--artemis-blue)]"
-                  : "bg-white text-artemis-charcoal hover:bg-[#f5f5f0]"
-              }`}
-            >
-              {format(v)}
-            </button>
-          );
-        })}
+    <div className="flex-1 flex flex-col items-center justify-center gap-5 p-8 bg-white">
+      <div className="arena-idle-moon" />
+      <span className="font-display text-2xl font-black uppercase tracking-tight text-black">Enter the Arena</span>
+      <div className="flex items-center gap-2">
+        <span className="arena-idle-term-chip">$10</span>
+        <span className="arena-idle-term-chip">5m</span>
+        <span className="arena-idle-term-chip">$100</span>
       </div>
+      <p className="text-[14px] font-body text-artemis-charcoal/55">Create a match from the main view to start trading</p>
     </div>
   );
 }

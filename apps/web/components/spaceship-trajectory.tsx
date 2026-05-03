@@ -106,8 +106,8 @@ export default function SpaceshipTrajectory() {
   }, [])
 
   const { w, h } = dimensions
-  const earthSize = clampNumber(w * 0.14, 92, 160)
-  const moonSize = clampNumber(w * 0.18, 120, 220)
+  const earthSize = clampNumber(w * 0.07, 46, 80)
+  const moonSize = clampNumber(w * 0.09, 60, 110)
 
   const earth = {
     x: w * EARTH_LEFT_RATIO + earthSize / 2,
@@ -262,8 +262,8 @@ function buildMissionTrajectory(
   const mMid = A
   const mDep = A + 60
 
-  const earthOrbitRadius = earth.size * 0.61
-  const moonOrbitRadius = moon.size * 0.57
+  const earthOrbitRadius = earth.size * 0.85
+  const moonOrbitRadius = moon.size * 0.80
 
   // Calculate planetary trajectory intersections
   const pEarthUpper = pointOnOrbit(earth, earthOrbitRadius, e3, viewportWidth, viewportHeight)
