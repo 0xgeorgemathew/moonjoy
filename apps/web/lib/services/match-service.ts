@@ -30,9 +30,11 @@ import type { McpRuntimeContext } from "@/lib/types/mcp";
 import type {
   ActiveMatchSnapshot,
   MatchParticipantView,
+  MatchStrategySummaryView,
   MatchRow,
   MatchView,
   MatchViewer,
+  WarmupPreparationView,
 } from "@/lib/types/match";
 
 const ACTIVE_MATCH_STATUSES: MatchStatus[] = [
@@ -361,6 +363,10 @@ async function presentMatch(
       : Promise.resolve(null);
   const [creator, opponent] = await Promise.all([creatorPromise, opponentPromise]);
   const nextTransitionAt = getNextTransitionAt(matchRowToState(reconciled));
+  const warmupPreparation =
+    reconciled.status === "warmup"
+      ? await loadWarmupPreparationSummary(reconciled, viewerAgentId)
+      : null;
 
   return {
     id: reconciled.id,
@@ -391,6 +397,90 @@ async function presentMatch(
       reconciled.status === "settled"
         ? (reconciled.result_summary as Record<string, unknown>)
         : null,
+    warmupPreparation,
+  };
+}
+
+async function loadWarmupPreparationSummary(
+  row: MatchRow,
+  viewerAgentId: string,
+): Promise<WarmupPreparationView> {
+  const ready = await getWarmupReadyAgents(row.id);
+  const agentIds = [row.creator_agent_id, row.opponent_agent_id].filter(
+    (value): value is string => typeof value === "string" && value.length > 0,
+  );
+
+  const { data: strategyRows } = await createAdminClient()
+    .from("strategies")
+    .select("id, agent_id, name, strategy_kind, source_type, manifest_pointer, updated_at")
+    .in("agent_id", agentIds)
+    .eq("status", "active");
+
+  const rows = (strategyRows ?? []) as Array<{
+    id: string;
+    agent_id: string;
+    name: string;
+    strategy_kind: "public" | "secret_sauce";
+    source_type: string;
+    manifest_pointer: string;
+    updated_at: string;
+  }>;
+
+  const toSummary = (
+    strategy:
+      | {
+          id: string;
+          name: string;
+          strategy_kind: "public" | "secret_sauce";
+          source_type: string;
+          manifest_pointer: string;
+          updated_at: string;
+        }
+      | undefined,
+  ): MatchStrategySummaryView | null =>
+    strategy
+      ? {
+          id: strategy.id,
+          name: strategy.name,
+          strategyKind: strategy.strategy_kind,
+          sourceType: strategy.source_type,
+          manifestPointer: strategy.manifest_pointer,
+          updatedAt: strategy.updated_at,
+        }
+      : null;
+
+  const viewerPublicStrategy = toSummary(
+    rows.find(
+      (strategy) =>
+        strategy.agent_id === viewerAgentId && strategy.strategy_kind === "public",
+    ),
+  );
+  const viewerSecretStrategy = toSummary(
+    rows.find(
+      (strategy) =>
+        strategy.agent_id === viewerAgentId && strategy.strategy_kind === "secret_sauce",
+    ),
+  );
+  const opponentAgentId =
+    viewerAgentId === row.creator_agent_id ? row.opponent_agent_id : row.creator_agent_id;
+  const opponentPublicStrategy = toSummary(
+    rows.find(
+      (strategy) =>
+        strategy.agent_id === opponentAgentId && strategy.strategy_kind === "public",
+    ),
+  );
+
+  return {
+    totalReadyAgents: ready.readyAgentIds.length,
+    readyAgentIds: ready.readyAgentIds,
+    viewerReadyMarked: ready.readyAgentIds.includes(viewerAgentId),
+    opponentReadyMarked:
+      typeof opponentAgentId === "string" ? ready.readyAgentIds.includes(opponentAgentId) : false,
+    viewerPublicStrategy,
+    viewerSecretStrategy,
+    opponentPublicStrategy,
+    guidance:
+      "Warm-up is live. The agent should load its own strategies, inspect the opponent public strategy, form an opening plan, and mark ready without waiting for user input.",
   };
 }
 

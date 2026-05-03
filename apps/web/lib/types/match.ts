@@ -45,6 +45,26 @@ export type MatchParticipantView = {
   agentEnsName: string;
 };
 
+export type MatchStrategySummaryView = {
+  id: string;
+  name: string;
+  strategyKind: "public" | "secret_sauce";
+  sourceType: string;
+  manifestPointer: string;
+  updatedAt: string;
+};
+
+export type WarmupPreparationView = {
+  totalReadyAgents: number;
+  readyAgentIds: string[];
+  viewerReadyMarked: boolean;
+  opponentReadyMarked: boolean;
+  viewerPublicStrategy: MatchStrategySummaryView | null;
+  viewerSecretStrategy: MatchStrategySummaryView | null;
+  opponentPublicStrategy: MatchStrategySummaryView | null;
+  guidance: string;
+};
+
 export type MatchView = {
   id: string;
   status: MatchStatus;
@@ -66,6 +86,7 @@ export type MatchView = {
   settledAt: string | null;
   nextTransitionAt: string | null;
   resultSummary: Record<string, unknown> | null;
+  warmupPreparation: WarmupPreparationView | null;
 };
 
 export type MatchInviteView = {
