@@ -383,6 +383,21 @@ body {
 	}
 }
 
+@keyframes challenge-modal-enter {
+		from {
+			opacity: 0;
+			transform: translateY(24px) scale(0.97);
+		}
+		to {
+			opacity: 1;
+			transform: translateY(0) scale(1);
+		}
+	}
+
+	.animate-challenge-modal-enter {
+		animation: challenge-modal-enter 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+	}
+
 @keyframes pulse-dot {
 	0%,
 	100% {
@@ -462,8 +477,8 @@ body {
 }
 
 .moon-hero {
-	width: clamp(200px, 30vw, 300px);
-	height: clamp(200px, 30vw, 300px);
+	width: clamp(120px, 18vw, 220px);
+	height: clamp(120px, 18vw, 220px);
 	border-radius: 50%;
 	box-shadow:
 		0 0 32px 10px rgba(200 210 230 / 0.12),
@@ -1000,6 +1015,16 @@ body {
 	}
 }
 
+@keyframes freshness-pulse {
+	0%, 100% { opacity: 1; }
+	50% { opacity: 0.5; }
+}
+
+.arena-freshness-live {
+	animation: freshness-pulse 2s ease-in-out infinite;
+	color: #4ade80 !important;
+}
+
 @keyframes trade-enter {
 	from {
 		opacity: 0;
@@ -1091,6 +1116,552 @@ body {
 	background: var(--on-surface-variant);
 	opacity: 0.3;
 }
+
+/* ===== Arena — Neo-Brutalist White Pit ===== */
+
+/* Timer header bar — dominates the top */
+.arena-header-bar {
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	gap: 12px;
+	padding: 10px 16px;
+	background: #fff;
+	border-bottom: 3px solid #000;
+}
+
+.arena-timer-block {
+	display: flex;
+	align-items: baseline;
+	gap: 2px;
+}
+
+.arena-timer-count {
+	font-family: var(--font-display), sans-serif;
+	font-size: 36px;
+	font-weight: 900;
+	line-height: 1;
+	color: #000;
+	letter-spacing: -0.03em;
+	font-variant-numeric: tabular-nums;
+}
+
+.arena-timer-count.urgent {
+	color: var(--artemis-red);
+	animation: timer-urgent 1s ease-in-out infinite;
+}
+
+.arena-timer-label {
+	font-family: var(--font-label), sans-serif;
+	font-size: 10px;
+	font-weight: 700;
+	text-transform: uppercase;
+	letter-spacing: 0.15em;
+	color: var(--artemis-charcoal);
+	margin-left: 6px;
+}
+
+.arena-phase-tag {
+	font-family: var(--font-label), sans-serif;
+	font-size: 11px;
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: 0.12em;
+	padding: 4px 14px;
+	border: 2px solid #000;
+	border-radius: 99px;
+	background: #fff;
+	color: var(--artemis-charcoal);
+}
+
+.arena-phase-tag.live {
+	background: var(--artemis-red);
+	color: #fff;
+	box-shadow: 3px 3px 0 0 var(--artemis-blue);
+}
+
+/* VS Grid container */
+.arena-vs-grid {
+	display: grid;
+	grid-template-columns: 1fr 48px 1fr;
+	flex: 1;
+	min-height: 0;
+}
+
+/* Center VS divider — brutalist black bars */
+.arena-vs-divider {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: start;
+	padding-top: 20px;
+	background: #f5f5f5;
+	border-left: 3px solid #000;
+	border-right: 3px solid #000;
+}
+
+.arena-vs-glyph {
+	font-family: var(--font-display), sans-serif;
+	font-size: 14px;
+	font-weight: 900;
+	color: var(--artemis-charcoal);
+	letter-spacing: 0.05em;
+}
+
+.arena-vs-glyph.win {
+	color: var(--artemis-red);
+}
+
+/* Player column — white surface, matches neo-panel interior */
+.arena-player-col {
+	display: flex;
+	flex-direction: column;
+	min-height: 0;
+	overflow: hidden;
+	background: #fff;
+}
+
+.arena-player-col.is-viewer {
+	border-left: 4px solid var(--artemis-red);
+}
+
+/* Identity header */
+.arena-identity {
+	padding: 14px 16px 10px;
+	border-bottom: 2px dashed var(--artemis-charcoal);
+	opacity: 0.8;
+}
+
+.arena-role-tag {
+	font-size: 9px;
+	font-weight: 900;
+	letter-spacing: 0.18em;
+	text-transform: uppercase;
+	color: var(--artemis-charcoal);
+	font-family: var(--font-label), sans-serif;
+}
+
+.arena-role-tag.is-viewer {
+	color: var(--artemis-red);
+}
+
+.arena-you-chip {
+	font-size: 10px;
+	font-weight: 800;
+	letter-spacing: 0.1em;
+	text-transform: uppercase;
+	color: #fff;
+	background: var(--artemis-red);
+	padding: 3px 10px;
+	border: 2px solid #000;
+	border-radius: 4px;
+	font-family: var(--font-label), sans-serif;
+	box-shadow: 2px 2px 0 0 var(--artemis-blue);
+}
+
+.arena-agent-name {
+	font-size: 17px;
+	font-weight: 900;
+	font-family: var(--font-display), sans-serif;
+	color: #000;
+	line-height: 1.1;
+	letter-spacing: -0.02em;
+	overflow: hidden;
+	text-overflow: ellipsis;
+	white-space: nowrap;
+}
+
+.arena-agent-name.is-viewer {
+	color: var(--artemis-red);
+}
+
+.arena-pilot-line {
+	font-size: 11px;
+	font-family: var(--font-body), sans-serif;
+	color: var(--artemis-charcoal);
+	margin-top: 2px;
+}
+
+/* Score block — hero numbers on light tint */
+.arena-score-block {
+	padding: 16px;
+	border-bottom: 3px solid #000;
+	background: #fafafa;
+}
+
+.arena-score-label {
+	font-size: 9px;
+	font-weight: 800;
+	letter-spacing: 0.15em;
+	text-transform: uppercase;
+	color: var(--artemis-charcoal);
+	font-family: var(--font-label), sans-serif;
+	margin-bottom: 6px;
+}
+
+.arena-score-value {
+	font-size: 40px;
+	font-weight: 900;
+	font-family: var(--font-display), sans-serif;
+	line-height: 1;
+	letter-spacing: -0.03em;
+	font-variant-numeric: tabular-nums;
+}
+
+.arena-score-value.positive { color: var(--artemis-red); }
+.arena-score-value.negative { color: var(--artemis-charcoal); }
+.arena-score-value.neutral { color: var(--artemis-silver); }
+
+.arena-score-row {
+	display: flex;
+	align-items: baseline;
+	gap: 12px;
+	margin-top: 8px;
+}
+
+.arena-score-current {
+	font-size: 14px;
+	font-weight: 800;
+	font-family: var(--font-label), sans-serif;
+	color: #000;
+	font-variant-numeric: tabular-nums;
+}
+
+.arena-score-pnl {
+	font-size: 13px;
+	font-weight: 700;
+	font-family: var(--font-label), sans-serif;
+	font-variant-numeric: tabular-nums;
+}
+
+.arena-score-pnl.positive { color: var(--artemis-red); }
+.arena-score-pnl.negative { color: var(--artemis-charcoal); }
+
+.arena-status-badge {
+	font-size: 8px;
+	font-weight: 900;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	padding: 2px 8px;
+	border: 2px solid #000;
+	border-radius: 99px;
+	display: inline-flex;
+	align-items: center;
+	background: #fff;
+	box-shadow: 2px 2px 0 0 var(--artemis-blue);
+}
+
+.arena-status-badge.lead { color: var(--artemis-red); }
+.arena-status-badge.up { color: var(--artemis-red); }
+
+.arena-penalty-tag {
+	font-size: 11px;
+	font-family: var(--font-label), sans-serif;
+	color: var(--artemis-red);
+	background: #fff;
+	border: 2px solid #000;
+	padding: 3px 8px;
+	border-radius: 6px;
+	margin-top: 8px;
+	display: inline-block;
+	box-shadow: 2px 2px 0 0 var(--artemis-blue);
+}
+
+/* Holdings */
+.arena-holdings {
+	padding: 10px 16px;
+	border-bottom: 2px solid #000;
+	background: #fff;
+}
+
+.arena-holding-row {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 4px 0;
+}
+
+.arena-holding-symbol {
+	font-size: 12px;
+	font-weight: 800;
+	font-family: var(--font-label), sans-serif;
+	color: var(--artemis-charcoal);
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+.arena-holding-symbol.primary-token {
+	color: #000;
+	font-weight: 900;
+}
+
+.arena-holding-value {
+	font-size: 12px;
+	font-weight: 700;
+	font-family: var(--font-label), sans-serif;
+	color: #000;
+	font-variant-numeric: tabular-nums;
+}
+
+.arena-holding-value.primary-token {
+	color: var(--artemis-red);
+	font-weight: 900;
+}
+
+.arena-holding-pnl {
+	font-size: 10px;
+	margin-left: 6px;
+	font-weight: 700;
+	font-variant-numeric: tabular-nums;
+}
+
+.arena-holding-pnl.positive { color: var(--artemis-red); }
+.arena-holding-pnl.negative { color: var(--artemis-charcoal); }
+
+/* Trade feed — white surface with visible brutalist scrollbar */
+.arena-trade-feed {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+	background: #fff;
+	scrollbar-width: thin;
+	scrollbar-color: var(--artemis-charcoal) transparent;
+
+	&::-webkit-scrollbar { width: 5px; }
+	&::-webkit-scrollbar-track { background: #f5f5f5; border-left: 2px solid #000; }
+	&::-webkit-scrollbar-thumb {
+		background: var(--artemis-charcoal);
+		border-radius: 0;
+		border: 1px solid #000;
+	}
+	&::-webkit-scrollbar-thumb:hover {
+		background: #000;
+	}
+}
+
+.arena-trade-empty {
+	display: flex;
+	flex-direction: column;
+	align-items: center;
+	justify-content: center;
+	height: 100%;
+	padding: 32px 0;
+	gap: 6px;
+}
+
+.arena-trade-empty-title {
+	font-size: 13px;
+	font-weight: 900;
+	font-family: var(--font-display), sans-serif;
+	text-transform: uppercase;
+	letter-spacing: 0.1em;
+	color: var(--artemis-silver);
+}
+
+.arena-trade-empty-sub {
+	font-size: 12px;
+	font-family: var(--font-body), sans-serif;
+	color: var(--artemis-silver);
+}
+
+/* Trade cards — neo-brutalist mini cards with hard shadows */
+.arena-trade-card {
+	margin: 6px 10px;
+	padding: 10px 12px;
+	border: 2px solid #000;
+	border-radius: 8px;
+	background: #fff;
+	box-shadow: 3px 3px 0 0 var(--artemis-blue);
+	transition: transform 0.1s ease, box-shadow 0.1s ease;
+	animation: trade-enter 0.35s ease-out backwards;
+}
+
+.arena-trade-card:hover {
+	transform: translate(-1px, -1px);
+	box-shadow: 4px 4px 0 0 var(--artemis-blue);
+}
+
+.arena-trade-card.is-viewer {
+	box-shadow: 3px 3px 0 0 var(--artemis-red);
+}
+
+.arena-trade-card.is-viewer:hover {
+	box-shadow: 4px 4px 0 0 var(--artemis-red);
+}
+
+.arena-trade-header {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	margin-bottom: 6px;
+}
+
+.arena-trade-side-badge {
+	font-size: 9px;
+	font-weight: 900;
+	letter-spacing: 0.08em;
+	text-transform: uppercase;
+	padding: 2px 7px;
+	border: 2px solid #000;
+	border-radius: 4px;
+	flex-shrink: 0;
+	font-family: var(--font-label), sans-serif;
+}
+
+.arena-trade-side-badge.buy {
+	color: #000;
+	background: #fff;
+}
+
+.arena-trade-side-badge.sell {
+	color: #fff;
+	background: var(--artemis-red);
+}
+
+.arena-trade-side-badge.exit {
+	color: var(--artemis-charcoal);
+	background: #f0f0f0;
+}
+
+.arena-trade-amounts {
+	display: flex;
+	align-items: center;
+	gap: 4px;
+	min-width: 0;
+	flex: 1;
+}
+
+.arena-trade-amount {
+	font-size: 12px;
+	font-weight: 700;
+	font-family: var(--font-label), sans-serif;
+	color: #000;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.arena-trade-amount-symbol {
+	color: var(--artemis-charcoal);
+	font-size: 10px;
+	font-weight: 700;
+	text-transform: uppercase;
+}
+
+.arena-trade-arrow {
+	color: var(--artemis-silver);
+	font-size: 12px;
+	flex-shrink: 0;
+	font-weight: 700;
+}
+
+.arena-trade-amount-out {
+	font-size: 12px;
+	font-weight: 700;
+	font-family: var(--font-label), sans-serif;
+	color: #000;
+	white-space: nowrap;
+	overflow: hidden;
+	text-overflow: ellipsis;
+}
+
+.arena-trade-time {
+	font-size: 9px;
+	font-family: var(--font-label), sans-serif;
+	color: var(--artemis-silver);
+	font-variant-numeric: tabular-nums;
+	flex-shrink: 0;
+	font-weight: 600;
+}
+
+.arena-trade-pnl {
+	font-size: 12px;
+	font-weight: 900;
+	font-family: var(--font-label), sans-serif;
+	font-variant-numeric: tabular-nums;
+	padding: 3px 8px;
+	border: 2px solid #000;
+	border-radius: 4px;
+	display: inline-block;
+	margin-top: 6px;
+}
+
+.arena-trade-pnl.positive {
+	color: #000;
+	background: #fff;
+}
+
+.arena-trade-pnl.negative {
+	color: #fff;
+	background: var(--artemis-red);
+}
+
+.arena-trade-reject {
+	font-size: 10px;
+	font-family: var(--font-label), sans-serif;
+	color: var(--artemis-red);
+	font-weight: 700;
+	margin-top: 4px;
+	padding: 3px 6px;
+	border: 2px solid #000;
+	border-radius: 4px;
+	background: #fff;
+}
+
+/* Footer bar for windows / meta info */
+.arena-footer-bar {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	padding: 8px 16px;
+	background: #fff;
+	border-top: 3px solid #000;
+}
+
+.arena-window-pill {
+	font-size: 9px;
+	font-family: var(--font-label), sans-serif;
+	font-weight: 800;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+	padding: 3px 10px;
+	border: 2px solid #000;
+	border-radius: 99px;
+	font-variant-numeric: tabular-nums;
+}
+
+.arena-window-pill.done {
+	color: #000;
+	background: #fff;
+	box-shadow: 2px 2px 0 0 var(--artemis-blue);
+}
+
+.arena-window-pill.missed {
+	color: #fff;
+	background: var(--artemis-red);
+}
+
+.arena-result-text {
+	font-size: 14px;
+	font-weight: 900;
+	font-family: var(--font-display), sans-serif;
+	text-transform: uppercase;
+	letter-spacing: 0.05em;
+}
+
+.arena-result-text.creator-wins { color: var(--artemis-red); }
+.arena-result-text.challenger-wins { color: var(--artemis-blue); }
+
+/* Staggered trade card entry animations */
+.arena-trade-card:nth-child(1) { animation-delay: 0ms; }
+.arena-trade-card:nth-child(2) { animation-delay: 40ms; }
+.arena-trade-card:nth-child(3) { animation-delay: 80ms; }
+.arena-trade-card:nth-child(4) { animation-delay: 120ms; }
+.arena-trade-card:nth-child(5) { animation-delay: 160ms; }
+.arena-trade-card:nth-child(6) { animation-delay: 200ms; }
+.arena-trade-card:nth-child(7) { animation-delay: 240ms; }
+.arena-trade-card:nth-child(8) { animation-delay: 280ms; }
 
 /* ===== Neobrutalism Utilities — Artemis Edition ===== */
 

@@ -31,9 +31,9 @@ const arenaIcon = (
 	</svg>
 );
 
-type ViewType = "hero" | "arena" | "profile" | "settings";
+type ViewType = "hero" | "match" | "profile" | "settings";
 
-export function LandingNav({ activeView, ensLoading, ensName, onSettingsClick, onHomeClick, onProfileClick, onArenaClick }: { activeView: ViewType; ensLoading: boolean; ensName: string | null; onSettingsClick: () => void; onHomeClick: () => void; onProfileClick: () => void; onArenaClick: () => void }) {
+export function LandingNav({ activeView, ensLoading, ensName, onSettingsClick, onHomeClick, onProfileClick, onMatchClick }: { activeView: ViewType; ensLoading: boolean; ensName: string | null; onSettingsClick: () => void; onHomeClick: () => void; onProfileClick: () => void; onMatchClick: () => void }) {
 	const { authenticated } = usePrivy();
 
 	const buttonClass = (isActive: boolean) =>
@@ -75,12 +75,12 @@ export function LandingNav({ activeView, ensLoading, ensName, onSettingsClick, o
 				{authenticated && (
 					<button
 						type="button"
-						onClick={onArenaClick}
-						className={buttonClass(activeView === "arena")}
+						onClick={onMatchClick}
+						className={buttonClass(activeView === "match")}
 					>
 						{arenaIcon}
 						<span className="text-[9px] font-label font-semibold uppercase tracking-wider">
-							Arena
+							Match
 						</span>
 					</button>
 				)}

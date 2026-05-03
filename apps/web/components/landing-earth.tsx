@@ -1,8 +1,14 @@
+import { EARTH_BOTTOM_RATIO, EARTH_LEFT_RATIO } from "@/lib/space-scene"
+
 export function LandingEarth() {
   return (
     <div
-      className="earth pointer-events-none absolute left-[8vw] top-1/2 z-[3] -translate-y-1/2"
+      className="earth pointer-events-none absolute z-[3]"
       aria-hidden="true"
+      style={{
+        left: `${EARTH_LEFT_RATIO * 100}vw`,
+        bottom: `${EARTH_BOTTOM_RATIO * 100}vh`,
+      }}
     >
       <svg
         width="100%"
