@@ -1,8 +1,8 @@
 import { describe, expect, test } from "bun:test";
 import {
-  buildStrategyPointer,
   deriveAgentLabel,
   MAX_USER_LABEL_LENGTH_FOR_DERIVED_AGENT,
+  sortObjectKeys,
 } from "./agent-bootstrap-utils";
 
 describe("deriveAgentLabel", () => {
@@ -25,16 +25,16 @@ describe("deriveAgentLabel", () => {
   });
 });
 
-describe("buildStrategyPointer", () => {
+describe("sortObjectKeys", () => {
   test("is stable across object key ordering", () => {
-    const first = buildStrategyPointer({
+    const first = JSON.stringify(sortObjectKeys({
       thesis: "mean reversion",
       risk: { maxDrawdown: 0.15, rebalance: "5m" },
-    });
-    const second = buildStrategyPointer({
+    }));
+    const second = JSON.stringify(sortObjectKeys({
       risk: { rebalance: "5m", maxDrawdown: 0.15 },
       thesis: "mean reversion",
-    });
+    }));
 
     expect(first).toBe(second);
   });

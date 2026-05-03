@@ -12,9 +12,14 @@ import {
 } from "@/lib/services/agent-execution-service";
 import { recordMcpEvent } from "@/lib/services/mcp-event-service";
 import {
-  buildStrategyPointer,
   deriveAgentLabel,
 } from "@/lib/services/agent-bootstrap-utils";
+import { uploadJsonDocument, uploadManifest, downloadJsonDocument, parsePointer } from "@/lib/services/zero-g-storage-service";
+import {
+  buildSecretManifestPreview,
+  decryptSecretManifest,
+  encryptSecretManifest,
+} from "@/lib/services/strategy-secret-service";
 import {
   getEnsPublicClient,
   getFullNameForAddress,
@@ -28,8 +33,10 @@ import { resolveUser } from "@/lib/services/ens-resolution-service";
 import { createAdminClient } from "@/lib/supabase/admin";
 import { extractEnsLabel } from "@/lib/types/ens";
 import {
+  STRATEGY_KINDS,
   STRATEGY_SOURCE_TYPES,
   type StrategyDecisionRecord,
+  type StrategyKind,
   type StrategyRecord,
   type StrategySourceType,
   type StrategyStatus,
@@ -37,6 +44,7 @@ import {
 import type { McpRuntimeContext } from "@/lib/types/mcp";
 
 const STRATEGY_SOURCE_TYPE_SET = new Set<string>(STRATEGY_SOURCE_TYPES);
+const STRATEGY_KIND_SET = new Set<string>(STRATEGY_KINDS);
 
 export class AgentBootstrapError extends Error {
   constructor(
@@ -68,9 +76,12 @@ export type AgentBootstrapState = {
   executionSignerId: string | null;
   executionKeyExpiresAt: string | null;
   activeStrategy: StrategyRecord | null;
+  activeSecretStrategy: StrategyRecord | null;
   strategies: StrategyRecord[];
   publishedStrategyPointer: string | null;
+  publishedSecretSaucePointer: string | null;
   strategyPointerMatches: boolean;
+  secretSaucePointerMatches: boolean;
   requiredTextRecords: Array<{
     key: string;
     expectedValue: string;
@@ -98,6 +109,7 @@ type SentAgentTransaction = BootstrapPendingTransaction & {
 
 type StrategyMutationInput = {
   name: string;
+  strategyKind?: StrategyKind;
   sourceType: StrategySourceType;
   manifestBody: Record<string, unknown>;
   activate?: boolean;
@@ -107,6 +119,7 @@ type StrategyMutationInput = {
 type StrategyUpdateInput = {
   strategyId: string;
   name?: string;
+  strategyKind?: StrategyKind;
   sourceType?: StrategySourceType;
   manifestBody?: Record<string, unknown>;
   status?: StrategyStatus;
@@ -199,9 +212,19 @@ export async function getAgentBootstrapState(
     manifest_body: toManifestRecord(strategy.manifest_body),
   }));
   const activeStrategy =
-    strategyRows.find((strategy) => strategy.status === "active") ?? null;
+    strategyRows.find(
+      (strategy) => strategy.status === "active" && strategy.strategy_kind === "public",
+    ) ?? null;
+  const activeSecretStrategy =
+    strategyRows.find(
+      (strategy) => strategy.status === "active" && strategy.strategy_kind === "secret_sauce",
+    ) ?? null;
 
-  const expectedTextRecords = buildExpectedAgentTextRecords({ userEnsName });
+  const expectedTextRecords = buildExpectedAgentTextRecords({
+    userEnsName,
+    activeStrategyPointer: activeStrategy?.manifest_pointer ?? null,
+    activeSecretSaucePointer: activeSecretStrategy?.manifest_pointer ?? null,
+  });
 
   const activeAgentLabel =
     derivedAgent?.ok &&
@@ -233,6 +256,9 @@ export async function getAgentBootstrapState(
 
   const publishedStrategyPointer =
     textRecordReads.find((record) => record.key === "moonjoy:strategy")
+      ?.actualValue ?? null;
+  const publishedSecretSaucePointer =
+    textRecordReads.find((record) => record.key === "moonjoy:secret_sauce")
       ?.actualValue ?? null;
   const pendingTransactions = await getPendingBootstrapTransactions(context, {
     derivedAddress,
@@ -280,9 +306,16 @@ export async function getAgentBootstrapState(
     executionSignerId: context.executionSignerId,
     executionKeyExpiresAt: context.executionKeyExpiresAt,
     activeStrategy,
+    activeSecretStrategy,
     strategies: strategyRows,
     publishedStrategyPointer,
-    strategyPointerMatches: true,
+    publishedSecretSaucePointer,
+    strategyPointerMatches: activeStrategy
+      ? publishedStrategyPointer === activeStrategy.manifest_pointer
+      : !publishedStrategyPointer,
+    secretSaucePointerMatches: activeSecretStrategy
+      ? publishedSecretSaucePointer === activeSecretStrategy.manifest_pointer
+      : !publishedSecretSaucePointer,
     requiredTextRecords: textRecordReads,
     pendingTransactions,
   };
@@ -401,6 +434,11 @@ export async function listStrategies(
       ? state.strategies
       : state.strategies.filter((strategy) => strategy.status !== "archived"),
     activeStrategyId: state.activeStrategy?.id ?? null,
+    activeSecretStrategyId: state.activeSecretStrategy?.id ?? null,
+    activeStrategyIds: {
+      public: state.activeStrategy?.id ?? null,
+      secret_sauce: state.activeSecretStrategy?.id ?? null,
+    },
   };
 }
 
@@ -410,12 +448,28 @@ export async function createStrategy(
 ): Promise<Record<string, unknown>> {
   const supabase = createAdminClient();
   const manifestBody = normalizeManifestBody(input.manifestBody);
-  const pointer = buildStrategyPointer(manifestBody);
   const name = normalizeStrategyName(input.name);
+  const strategyKind = normalizeStrategyKind(input.strategyKind ?? "public");
   const sourceType = normalizeStrategySourceType(input.sourceType);
   const state = await getAgentBootstrapState(context);
 
-  const shouldActivate = input.activate ?? (state.activeStrategy === null);
+  const currentActiveStrategy =
+    strategyKind === "secret_sauce" ? state.activeSecretStrategy : state.activeStrategy;
+  const shouldActivate = input.activate ?? (currentActiveStrategy === null);
+
+  let pointer: string;
+  try {
+    const uploadResult =
+      strategyKind === "secret_sauce"
+        ? await uploadJsonDocument(encryptSecretManifest(manifestBody))
+        : await uploadManifest(sanitizePublicManifest(manifestBody, name, sourceType));
+    pointer = uploadResult.pointer;
+  } catch (err) {
+    throw new AgentBootstrapError(
+      `Strategy upload to 0G Storage failed: ${err instanceof Error ? err.message : String(err)}`,
+      502,
+    );
+  }
 
   const { data, error } = await supabase
     .from("strategies")
@@ -424,8 +478,12 @@ export async function createStrategy(
       agent_id: context.agentId,
       agent_smart_account_address: context.smartAccountAddress,
       name,
+      strategy_kind: strategyKind,
       source_type: sourceType,
-      manifest_body: manifestBody,
+      manifest_body:
+        strategyKind === "secret_sauce"
+          ? buildSecretManifestPreview(manifestBody)
+          : manifestBody,
       manifest_pointer: pointer,
       local_revision: 1,
       status: "draft",
@@ -434,7 +492,10 @@ export async function createStrategy(
     .single();
 
   if (error || !data) {
-    throw new AgentBootstrapError("Failed to create strategy.", 500);
+    throw new AgentBootstrapError(
+      `Failed to create strategy.${error?.message ? ` ${error.message}` : ""}`,
+      500,
+    );
   }
 
   const created = {
@@ -446,8 +507,9 @@ export async function createStrategy(
     ? await activateStrategyForAgent(
         supabase,
         context.agentId,
+        strategyKind,
         created.id,
-        state.activeStrategy?.id ?? null,
+        currentActiveStrategy?.id ?? null,
       )
     : created;
 
@@ -467,25 +529,51 @@ export async function updateStrategy(
 ): Promise<Record<string, unknown>> {
   const supabase = createAdminClient();
   const existing = await requireOwnedStrategy(context, input.strategyId);
+  if (input.strategyKind && normalizeStrategyKind(input.strategyKind) !== existing.strategy_kind) {
+    throw new AgentBootstrapError("Strategy kind cannot be changed after creation.", 400);
+  }
 
   const nextName = input.name ? normalizeStrategyName(input.name) : existing.name;
+  const nextStrategyKind = existing.strategy_kind;
   const nextSourceType = input.sourceType
     ? normalizeStrategySourceType(input.sourceType)
     : existing.source_type;
   const nextManifestBody = input.manifestBody
     ? normalizeManifestBody(input.manifestBody)
     : existing.manifest_body;
-  const nextManifestPointer = buildStrategyPointer(nextManifestBody);
+  const manifestChanged =
+    JSON.stringify(nextManifestBody) !== JSON.stringify(existing.manifest_body);
+  const publicManifestChanged =
+    manifestChanged ||
+    nextName !== existing.name ||
+    nextSourceType !== existing.source_type;
+
+  let nextManifestPointer = existing.manifest_pointer;
+  if (publicManifestChanged) {
+    try {
+      const uploadResult =
+        nextStrategyKind === "secret_sauce"
+          ? await uploadJsonDocument(encryptSecretManifest(nextManifestBody))
+          : await uploadManifest(
+              sanitizePublicManifest(nextManifestBody, nextName, nextSourceType),
+            );
+      nextManifestPointer = uploadResult.pointer;
+    } catch (err) {
+      throw new AgentBootstrapError(
+        `Strategy re-upload to 0G Storage failed: ${err instanceof Error ? err.message : String(err)}`,
+        502,
+      );
+    }
+  }
   const nextStatus = input.status ?? existing.status;
   const { data: activeStrategy } = await supabase
     .from("strategies")
     .select("id")
     .eq("agent_id", context.agentId)
+    .eq("strategy_kind", existing.strategy_kind)
     .eq("status", "active")
     .maybeSingle();
 
-  const manifestChanged =
-    JSON.stringify(nextManifestBody) !== JSON.stringify(existing.manifest_body);
   const revisionChanged =
     manifestChanged ||
     nextName !== existing.name ||
@@ -497,7 +585,10 @@ export async function updateStrategy(
     .update({
       name: nextName,
       source_type: nextSourceType,
-      manifest_body: nextManifestBody,
+      manifest_body:
+        nextStrategyKind === "secret_sauce"
+          ? (input.manifestBody ? buildSecretManifestPreview(nextManifestBody) : existing.manifest_body)
+          : nextManifestBody,
       manifest_pointer: nextManifestPointer,
       local_revision: revisionChanged
         ? existing.local_revision + 1
@@ -510,7 +601,10 @@ export async function updateStrategy(
     .single();
 
   if (error || !data) {
-    throw new AgentBootstrapError("Failed to update strategy.", 500);
+    throw new AgentBootstrapError(
+      `Failed to update strategy.${error?.message ? ` ${error.message}` : ""}`,
+      500,
+    );
   }
 
   const updatedStrategy =
@@ -518,6 +612,7 @@ export async function updateStrategy(
       ? await activateStrategyForAgent(
           supabase,
           context.agentId,
+          existing.strategy_kind,
           existing.id,
           activeStrategy?.id && activeStrategy.id !== existing.id
             ? activeStrategy.id
@@ -573,6 +668,43 @@ export async function recordStrategyDecision(
   return {
     status: "ok",
     decision: data as StrategyDecisionRecord,
+  };
+}
+
+export async function readStrategy(
+  context: McpRuntimeContext,
+  input: {
+    strategyId?: string;
+    strategyKind?: StrategyKind;
+  } = {},
+): Promise<Record<string, unknown>> {
+  const strategy =
+    input.strategyId
+      ? await requireOwnedStrategy(context, input.strategyId)
+      : await requireActiveStrategy(context, input.strategyKind ?? "public");
+
+  if (strategy.strategy_kind !== "secret_sauce") {
+    return {
+      status: "ok",
+      strategy,
+      decryptedManifest: strategy.manifest_body,
+      visibility: "public",
+    };
+  }
+
+  const pointer = parsePointer(strategy.manifest_pointer);
+  if (!pointer) {
+    throw new AgentBootstrapError("Secret sauce pointer is invalid.", 500);
+  }
+
+  const encryptedEnvelope = await downloadJsonDocument(pointer.rootHash);
+  const decryptedManifest = decryptSecretManifest(encryptedEnvelope);
+
+  return {
+    status: "ok",
+    strategy,
+    decryptedManifest,
+    visibility: "mcp_only",
   };
 }
 
@@ -663,6 +795,21 @@ export function buildBootstrapRecommendationFromState(
       toolName: "moonjoy_strategy:action=create",
       args: buildDefaultBootstrapStrategy(state),
       reason: "The agent does not have an active default strategy yet.",
+    };
+  }
+
+  if (!state.strategyPointerMatches) {
+    return {
+      status: "actionable",
+      step: "sync_strategy_pointer",
+      toolName: "moonjoy_strategy:action=update",
+      args: {
+        strategyId: state.activeStrategy.id,
+        status: "active",
+        publishPublicPointer: true,
+      },
+      reason:
+        "The active strategy exists, but its public ENS moonjoy:strategy pointer is missing or out of sync.",
     };
   }
 
@@ -809,6 +956,8 @@ async function syncAgentTextRecords(
   const transactions: SentAgentTransaction[] = [];
   for (const record of buildExpectedAgentTextRecords({
     userEnsName: state.userEnsName,
+    activeStrategyPointer: state.activeStrategy?.manifest_pointer ?? null,
+    activeSecretSaucePointer: state.activeSecretStrategy?.manifest_pointer ?? null,
   })) {
     const currentValue = await safeResolveTextRecord(state.derivedAgentLabel, record.key);
     if (currentValue === record.expectedValue) {
@@ -1110,6 +1259,32 @@ async function requireOwnedStrategy(
   };
 }
 
+async function requireActiveStrategy(
+  context: McpRuntimeContext,
+  strategyKind: StrategyKind,
+): Promise<StrategyRecord> {
+  const { data } = await createAdminClient()
+    .from("strategies")
+    .select("*")
+    .eq("user_id", context.userId)
+    .eq("agent_id", context.agentId)
+    .eq("strategy_kind", strategyKind)
+    .eq("status", "active")
+    .maybeSingle();
+
+  if (!data) {
+    throw new AgentBootstrapError(
+      `No active ${strategyKind === "secret_sauce" ? "secret sauce" : "public"} strategy found for this agent.`,
+      404,
+    );
+  }
+
+  return {
+    ...(data as StrategyRecord),
+    manifest_body: toManifestRecord((data as StrategyRecord).manifest_body),
+  };
+}
+
 async function archiveActiveStrategy(
   supabase: ReturnType<typeof createAdminClient>,
   strategyId: string,
@@ -1130,6 +1305,7 @@ async function archiveActiveStrategy(
 async function activateStrategyForAgent(
   supabase: ReturnType<typeof createAdminClient>,
   agentId: string,
+  strategyKind: StrategyKind,
   strategyId: string,
   previousActiveStrategyId: string | null,
 ): Promise<StrategyRecord> {
@@ -1145,6 +1321,7 @@ async function activateStrategyForAgent(
     })
     .eq("id", strategyId)
     .eq("agent_id", agentId)
+    .eq("strategy_kind", strategyKind)
     .select("*")
     .single();
 
@@ -1200,6 +1377,14 @@ function normalizeStrategySourceType(sourceType: string): StrategySourceType {
   return sourceType as StrategySourceType;
 }
 
+function normalizeStrategyKind(strategyKind: string): StrategyKind {
+  if (!STRATEGY_KIND_SET.has(strategyKind)) {
+    throw new AgentBootstrapError("Invalid strategy kind.", 400);
+  }
+
+  return strategyKind as StrategyKind;
+}
+
 function normalizeManifestBody(
   manifestBody: Record<string, unknown>,
 ): Record<string, unknown> {
@@ -1207,6 +1392,27 @@ function normalizeManifestBody(
     throw new AgentBootstrapError("Strategy manifest body must be an object.", 400);
   }
   return manifestBody;
+}
+
+function sanitizePublicManifest(
+  manifestBody: Record<string, unknown>,
+  name: string,
+  sourceType: string,
+): Record<string, unknown> {
+  return {
+    version: typeof manifestBody.version === "number" ? manifestBody.version : 1,
+    name,
+    sourceType,
+    mode: typeof manifestBody.mode === "string" ? manifestBody.mode : sourceType,
+    ...(typeof manifestBody.thesis === "string" ? { thesis: manifestBody.thesis } : {}),
+    ...(Array.isArray(manifestBody.objectives) ? { objectives: manifestBody.objectives } : {}),
+    ...(manifestBody.risk && typeof manifestBody.risk === "object" && !Array.isArray(manifestBody.risk)
+      ? { risk: manifestBody.risk as Record<string, unknown> }
+      : {}),
+    ...(manifestBody.execution && typeof manifestBody.execution === "object" && !Array.isArray(manifestBody.execution)
+      ? { execution: manifestBody.execution as Record<string, unknown> }
+      : {}),
+  };
 }
 
 function toManifestRecord(value: unknown): Record<string, unknown> {
@@ -1219,6 +1425,8 @@ function toManifestRecord(value: unknown): Record<string, unknown> {
 
 function buildExpectedAgentTextRecords(params: {
   userEnsName: string | null;
+  activeStrategyPointer?: string | null;
+  activeSecretSaucePointer?: string | null;
 }) {
   const records = [{ key: "moonjoy:type", expectedValue: "agent" }];
 
@@ -1226,6 +1434,20 @@ function buildExpectedAgentTextRecords(params: {
     records.push({
       key: "moonjoy:user",
       expectedValue: params.userEnsName,
+    });
+  }
+
+  if (params.activeStrategyPointer) {
+    records.push({
+      key: "moonjoy:strategy",
+      expectedValue: params.activeStrategyPointer,
+    });
+  }
+
+  if (params.activeSecretSaucePointer) {
+    records.push({
+      key: "moonjoy:secret_sauce",
+      expectedValue: params.activeSecretSaucePointer,
     });
   }
 

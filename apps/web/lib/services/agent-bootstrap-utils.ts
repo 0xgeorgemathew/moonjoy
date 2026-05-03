@@ -1,5 +1,3 @@
-import { createHash } from "node:crypto";
-
 const MAX_ENS_LABEL_LENGTH = 32;
 const AGENT_LABEL_PREFIX = "agent-";
 const MAX_USER_LABEL_LENGTH_FOR_DERIVED_AGENT =
@@ -39,24 +37,16 @@ export function deriveAgentLabel(userLabel: string): {
   };
 }
 
-export function buildStrategyPointer(
-  manifestBody: Record<string, unknown>,
-): string {
-  const canonicalJson = JSON.stringify(sortValue(manifestBody));
-  const digest = createHash("sha256").update(canonicalJson).digest("hex");
-  return `sha256:${digest}`;
-}
-
-function sortValue(value: unknown): unknown {
+export function sortObjectKeys(value: unknown): unknown {
   if (Array.isArray(value)) {
-    return value.map(sortValue);
+    return value.map(sortObjectKeys);
   }
 
   if (value && typeof value === "object") {
     return Object.fromEntries(
       Object.entries(value as Record<string, unknown>)
         .sort(([left], [right]) => left.localeCompare(right))
-        .map(([key, nestedValue]) => [key, sortValue(nestedValue)]),
+        .map(([key, nestedValue]) => [key, sortObjectKeys(nestedValue)]),
     );
   }
 
