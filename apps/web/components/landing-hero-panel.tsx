@@ -1,8 +1,8 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, useCallback, useRef } from "react";
 import { usePrivy } from "@privy-io/react-auth";
-import { useSearchParams } from "next/navigation";
+import { useRouter, useSearchParams } from "next/navigation";
 import { LandingNav } from "@/components/landing-nav";
 import { LandingCta } from "@/components/landing-cta";
 import { LandingProfile } from "@/components/landing-profile";
@@ -12,17 +12,24 @@ import { NetworkToggle } from "@/components/network-toggle";
 import { ChallengeModal } from "@/components/challenge-modal";
 import { useAuthState } from "@/lib/hooks/use-auth-state";
 import { useUserEnsStatus } from "@/lib/hooks/use-user-ens-status";
+import { MAIN_ARENA_PATH } from "@/lib/constants/arena";
+import { createClient } from "@/lib/supabase/client";
+import type { ArenaSnapshot } from "@/lib/types/arena";
 
 type ViewType = "hero" | "match" | "profile" | "settings";
 
 export function LandingHeroPanel() {
   const { authenticated, getAccessToken } = usePrivy();
   const { embeddedAddress, smartAccountAddress } = useAuthState();
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const [supabase] = useState(() => createClient());
   const [activeView, setActiveView] = useState<ViewType>("hero");
   const [challengeOpen, setChallengeOpen] = useState(false);
   const [challengeLoading, setChallengeLoading] = useState(false);
   const [challengeError, setChallengeError] = useState<string | null>(null);
+  const [agentTopic, setAgentTopic] = useState<string | null>(null);
+  const previousActiveMatchIdRef = useRef<string | null>(null);
   const { accessToken, ensStatus, loading: ensLoading } =
     useUserEnsStatus(authenticated);
 
@@ -31,6 +38,75 @@ export function LandingHeroPanel() {
       queueMicrotask(() => setActiveView("match"));
     }
   }, [searchParams]);
+
+  const syncArenaPresence = useCallback(
+    (snapshot: ArenaSnapshot) => {
+      const nextAgentTopic = snapshot.viewer.agentTopic || null;
+      const nextActiveMatchId = snapshot.activeMatch?.id ?? null;
+      const previousActiveMatchId = previousActiveMatchIdRef.current;
+
+      setAgentTopic(nextAgentTopic);
+      previousActiveMatchIdRef.current = nextActiveMatchId;
+
+      if (nextActiveMatchId && nextActiveMatchId !== previousActiveMatchId) {
+        setActiveView("match");
+        if (searchParams.get("arena") !== "1") {
+          router.replace(MAIN_ARENA_PATH);
+        }
+      }
+    },
+    [router, searchParams],
+  );
+
+  const refreshArenaPresence = useCallback(async () => {
+    if (!authenticated) return;
+
+    try {
+      const token = await getAccessToken();
+      if (!token) return;
+
+      const response = await fetch("/api/arena/state", {
+        headers: { Authorization: `Bearer ${token}` },
+      });
+
+      if (!response.ok) return;
+
+      const snapshot = (await response.json()) as ArenaSnapshot;
+      syncArenaPresence(snapshot);
+    } catch {
+      // Background routing sync should not interrupt the main shell.
+    }
+  }, [authenticated, getAccessToken, syncArenaPresence]);
+
+  useEffect(() => {
+    if (!authenticated) {
+      setAgentTopic(null);
+      previousActiveMatchIdRef.current = null;
+      return;
+    }
+
+    queueMicrotask(() => {
+      void refreshArenaPresence();
+    });
+  }, [authenticated, refreshArenaPresence]);
+
+  useEffect(() => {
+    if (!authenticated || !agentTopic) return;
+
+    const channel = supabase
+      .channel(agentTopic)
+      .on("broadcast", { event: "invite_joined" }, () => {
+        void refreshArenaPresence();
+      })
+      .on("broadcast", { event: "match_state_changed" }, () => {
+        void refreshArenaPresence();
+      })
+      .subscribe();
+
+    return () => {
+      void supabase.removeChannel(channel);
+    };
+  }, [agentTopic, authenticated, refreshArenaPresence, supabase]);
   const shellViewClass =
     "animate-fade-in-up relative flex min-h-[28rem] min-w-0 flex-1 flex-col overflow-hidden sm:min-h-[32rem] lg:h-full lg:min-h-0";
 
