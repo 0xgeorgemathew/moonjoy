@@ -1,6 +1,11 @@
 import { NextResponse } from "next/server";
 import { AuthError, getAuthenticatedUserId } from "@/lib/auth/server";
-import { createInvite, revokeInvite, type CreateInviteInput, InviteServiceError } from "@/lib/services/invite-service";
+import {
+  createInvite,
+  revokeInvite,
+  type CreateInviteInput,
+  InviteServiceError,
+} from "@/lib/services/invite-service";
 
 async function requirePrivyUserId(request: Request): Promise<string> {
   try {
@@ -38,6 +43,7 @@ export async function POST(request: Request) {
       scopedEnsName: body.scopedEnsName,
       wagerUsd: body.wagerUsd,
       durationSeconds: body.durationSeconds,
+      startingCapitalUsd: body.startingCapitalUsd,
       warmupSeconds: body.warmupSeconds,
     });
     return NextResponse.json(invite, { status: 201 });

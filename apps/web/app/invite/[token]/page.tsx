@@ -16,6 +16,7 @@ type InviteData = {
   status: string;
   createdAt: string;
   expiresAt: string | null;
+  creatorEnsName: string | null;
 };
 
 export default function InvitePage({
@@ -54,7 +55,9 @@ export default function InvitePage({
   }, [token]);
 
   useEffect(() => {
-    void fetchInvite();
+    queueMicrotask(() => {
+      void fetchInvite();
+    });
   }, [fetchInvite]);
 
   const handleJoin = async () => {
@@ -74,13 +77,13 @@ export default function InvitePage({
           "Content-Type": "application/json",
         },
       });
-      const body = (await res.json()) as { matchId?: string; status?: string; error?: string };
+      const body = (await res.json()) as { matchId?: string; status?: string; redirectPath?: string; error?: string };
       if (!res.ok) {
         setError(body.error ?? "Failed to join invite.");
         return;
       }
       if (body.matchId) {
-        router.push("/?arena=1");
+        router.push(body.redirectPath ?? "/match");
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to join invite.");
@@ -91,9 +94,22 @@ export default function InvitePage({
 
   if (!ready || loading) {
     return (
-      <main className="flex min-h-[100dvh] items-center justify-center bg-surface px-4">
-        <div className="neu-convex p-8 text-center">
-          <span className="text-xs font-mono uppercase tracking-widest text-on-surface-variant">Loading invite...</span>
+      <main className="flex-1 flex items-center justify-center px-4">
+        <div
+          className="p-8 text-center"
+          style={{
+            background: "#fff",
+            border: "5px solid #000",
+            borderRadius: "20px",
+            boxShadow: "12px 12px 0 0 #1565C0",
+          }}
+        >
+          <div className="flex items-center gap-3 justify-center">
+            <span className="font-display text-lg font-black uppercase tracking-tight text-black">
+              Syncing
+            </span>
+            <span className="inline-block w-2 h-2 rounded-full bg-artemis-red animate-pulse-dot" />
+          </div>
         </div>
       </main>
     );
@@ -101,10 +117,41 @@ export default function InvitePage({
 
   if (error && !invite) {
     return (
-      <main className="flex min-h-[100dvh] items-center justify-center bg-surface px-4">
-        <div className="neu-convex p-8 text-center max-w-md">
-          <h2 className="font-display text-lg font-black uppercase tracking-tight text-red-400 mb-2">Invite Error</h2>
-          <p className="text-sm text-on-surface-variant">{error}</p>
+      <main className="flex-1 flex items-center justify-center px-4">
+        <div
+          className="p-8 text-center max-w-md w-full"
+          style={{
+            background: "#fff",
+            border: "5px solid #000",
+            borderRadius: "20px",
+            boxShadow: "12px 12px 0 0 #1565C0",
+          }}
+        >
+          <div className="flex items-center justify-center gap-3 mb-4">
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 36,
+                height: 36,
+                borderRadius: "10px",
+                background: "#E53935",
+                border: "3px solid #000",
+                boxShadow: "3px 3px 0 0 #1565C0",
+                color: "#fff",
+                fontFamily: "var(--font-display)",
+                fontSize: "16px",
+                fontWeight: 900,
+              }}
+            >
+              !
+            </span>
+            <span className="font-display text-xl font-black uppercase tracking-tight text-black">
+              Error
+            </span>
+          </div>
+          <p className="font-body text-sm text-[var(--artemis-charcoal)]">{error}</p>
         </div>
       </main>
     );
@@ -112,88 +159,304 @@ export default function InvitePage({
 
   if (!invite) return null;
 
+  const fmtDuration = (s: number): string => {
+    const m = Math.floor(s / 60);
+    return m < 2 ? `${s}s` : `${m}m`;
+  };
+
   return (
-    <main className="flex min-h-[100dvh] items-center justify-center bg-surface px-4">
-      <div className="neu-convex p-8 max-w-md w-full">
-        <div className="flex items-center justify-between mb-4">
-          <h1 className="font-display text-lg font-black uppercase tracking-tight text-on-surface">Match Invite</h1>
-          <span className={`text-[8px] font-bold uppercase tracking-widest px-2 py-1 rounded ${
-            invite.status === "open"
-              ? "bg-green-900/30 text-green-400"
-              : invite.status === "joined"
-                ? "bg-blue-900/30 text-blue-400"
-                : "bg-red-900/30 text-red-400"
-          }`}>
+    <main className="flex-1 flex items-center justify-center px-4 py-8">
+      <div
+        className="w-full max-w-md animate-challenge-modal-enter"
+        style={{
+          background: "#fff",
+          border: "5px solid #000",
+          borderRadius: "20px",
+          boxShadow: "12px 12px 0 0 #1565C0",
+        }}
+      >
+        {/* Header */}
+        <div
+          className="flex items-center justify-between px-6 py-4"
+          style={{ borderBottom: "3px solid #000" }}
+        >
+          <div className="flex items-center gap-3">
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 36,
+                height: 36,
+                borderRadius: "10px",
+                background: "#E53935",
+                border: "3px solid #000",
+                boxShadow: "3px 3px 0 0 #1565C0",
+                color: "#fff",
+                fontFamily: "var(--font-display)",
+                fontSize: "16px",
+                fontWeight: 900,
+              }}
+            >
+              VS
+            </span>
+            <div>
+              <h1
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: "20px",
+                  fontWeight: 900,
+                  textTransform: "uppercase",
+                  letterSpacing: "-0.02em",
+                  color: "#000",
+                  lineHeight: 1,
+                }}
+              >
+                Match Invite
+              </h1>
+              <span
+                style={{
+                  fontFamily: "var(--font-label)",
+                  fontSize: "10px",
+                  fontWeight: 800,
+                  textTransform: "uppercase",
+                  letterSpacing: "0.15em",
+                  color: "#455A64",
+                }}
+              >
+                {invite.scopeType === "ens" ? "ENS-Scoped" : "Open Challenge"}
+              </span>
+            </div>
+          </div>
+          <span
+            style={{
+              fontFamily: "var(--font-label)",
+              fontSize: "9px",
+              fontWeight: 900,
+              letterSpacing: "0.1em",
+              textTransform: "uppercase",
+              padding: "4px 12px",
+              border: "2px solid #000",
+              borderRadius: "99px",
+              boxShadow: "2px 2px 0 0 #1565C0",
+              ...(invite.status === "open"
+                ? { background: "#fff", color: "#000" }
+                : invite.status === "joined"
+                  ? { background: "#1565C0", color: "#fff" }
+                  : { background: "#E53935", color: "#fff" }),
+            }}
+          >
             {invite.status}
           </span>
         </div>
 
-        <div className="space-y-2 mb-6">
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-mono text-on-surface-variant uppercase">Wager</span>
-            <span className="text-sm font-bold text-on-surface">${invite.wagerUsd}</span>
+        {/* Challenger */}
+        {invite.creatorEnsName && (
+          <div
+            className="flex items-center gap-3 px-6 py-4"
+            style={{ borderBottom: "3px solid #000", background: "#fafaf8" }}
+          >
+            <span
+              style={{
+                display: "inline-flex",
+                alignItems: "center",
+                justifyContent: "center",
+                width: 32,
+                height: 32,
+                borderRadius: "8px",
+                background: "#000",
+                border: "2px solid #000",
+                color: "#fff",
+                fontFamily: "var(--font-label)",
+                fontSize: "12px",
+                fontWeight: 900,
+                letterSpacing: "0.05em",
+              }}
+            >
+              {(invite.creatorEnsName.split(".")[0] ?? "?").slice(0, 2).toUpperCase()}
+            </span>
+            <div className="min-w-0 flex-1">
+              <span
+                style={{
+                  fontFamily: "var(--font-label)",
+                  fontSize: "9px",
+                  fontWeight: 900,
+                  letterSpacing: "0.15em",
+                  textTransform: "uppercase",
+                  color: "#455A64",
+                  display: "block",
+                }}
+              >
+                Challenger
+              </span>
+              <span
+                className="block truncate"
+                style={{
+                  fontFamily: "var(--font-display)",
+                  fontSize: "15px",
+                  fontWeight: 900,
+                  textTransform: "uppercase",
+                  letterSpacing: "-0.01em",
+                  color: "#000",
+                  lineHeight: 1.3,
+                }}
+              >
+                {invite.creatorEnsName}
+              </span>
+            </div>
           </div>
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-mono text-on-surface-variant uppercase">Duration</span>
-            <span className="text-sm font-bold text-on-surface">{invite.durationSeconds / 60}m</span>
-          </div>
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-mono text-on-surface-variant uppercase">Warmup</span>
-            <span className="text-sm font-bold text-on-surface">{invite.warmupSeconds}s</span>
+        )}
+
+        {/* Match Terms */}
+        <div
+          className="px-6 py-5"
+          style={{ borderBottom: "3px dashed #455A64", opacity: 0.8 }}
+        >
+          <span
+            style={{
+              fontFamily: "var(--font-label)",
+              fontSize: "9px",
+              fontWeight: 900,
+              letterSpacing: "0.18em",
+              textTransform: "uppercase",
+              color: "#455A64",
+              display: "block",
+              marginBottom: "10px",
+            }}
+          >
+            Match Terms
+          </span>
+          <div className="flex items-center gap-3 flex-wrap">
+            <TermChip label="Wager" value={`$${invite.wagerUsd}`} accent />
+            <TermChip label="Duration" value={fmtDuration(invite.durationSeconds)} />
+            <TermChip label="Warmup" value={`${invite.warmupSeconds}s`} />
           </div>
           {invite.scopeType === "ens" && invite.scopedEnsName && (
-            <div className="flex items-center justify-between">
-              <span className="text-[9px] font-mono text-on-surface-variant uppercase">ENS Scope</span>
-              <span className="text-sm font-bold text-primary">{invite.scopedEnsName}</span>
+            <div className="mt-3">
+              <TermChip label="ENS" value={invite.scopedEnsName} accent />
             </div>
           )}
-          <div className="flex items-center justify-between">
-            <span className="text-[9px] font-mono text-on-surface-variant uppercase">Scope</span>
-            <span className="text-sm font-bold text-on-surface">{invite.scopeType === "ens" ? "ENS-Scoped" : "Open"}</span>
-          </div>
         </div>
 
+        {/* Error */}
         {error && (
-          <div className="bg-red-900/20 rounded px-3 py-2 mb-4">
-            <p className="text-[10px] font-mono text-red-400">{error}</p>
+          <div
+            className="px-6 py-3"
+            style={{ background: "#FFF0F0", borderBottom: "3px solid #000" }}
+          >
+            <span style={{ fontFamily: "var(--font-label)", fontSize: "12px", fontWeight: 800, color: "#E53935" }}>
+              {error}
+            </span>
           </div>
         )}
 
-        {invite.status === "open" && (
-          <>
-            {!authenticated ? (
-              <button
-                type="button"
-                onClick={() => void login()}
-                className="neo-btn w-full py-3 text-xs"
-              >
-                Connect to Join
-              </button>
-            ) : (
-              <button
-                type="button"
-                onClick={() => void handleJoin()}
-                disabled={joining}
-                className="neo-btn w-full py-3 text-xs disabled:opacity-40 disabled:cursor-not-allowed"
-              >
-                {joining ? "Joining..." : "Accept Invite & Start Match"}
-              </button>
-            )}
-          </>
-        )}
+        {/* Actions */}
+        <div className="px-6 py-5">
+          {invite.status === "open" && (
+            <>
+              {!authenticated ? (
+                <button
+                  type="button"
+                  onClick={() => void login()}
+                  className="neo-btn w-full py-4"
+                  style={{
+                    fontSize: "16px",
+                    letterSpacing: "0.12em",
+                  }}
+                >
+                  Connect to Join
+                </button>
+              ) : (
+                <button
+                  type="button"
+                  onClick={() => void handleJoin()}
+                  disabled={joining}
+                  className="neo-btn w-full py-4"
+                  style={{
+                    fontSize: "16px",
+                    letterSpacing: "0.12em",
+                    opacity: joining ? 0.4 : 1,
+                    cursor: joining ? "not-allowed" : "pointer",
+                  }}
+                >
+                  {joining ? "Joining..." : "Accept Challenge"}
+                </button>
+              )}
+            </>
+          )}
 
-        {invite.status === "joined" && (
-          <p className="text-sm text-center text-on-surface-variant">
-            This invite has been accepted. Redirecting...
-          </p>
-        )}
+          {invite.status === "joined" && (
+            <div className="text-center py-2">
+              <span
+                className="font-display text-base font-black uppercase tracking-tight"
+                style={{ color: "#1565C0" }}
+              >
+                Accepted
+              </span>
+              <p className="font-body text-sm text-[var(--artemis-charcoal)] mt-1">
+                Redirecting to match...
+              </p>
+            </div>
+          )}
 
-        {(invite.status === "expired" || invite.status === "revoked") && (
-          <p className="text-sm text-center text-red-400">
-            This invite is no longer available.
-          </p>
-        )}
+          {(invite.status === "expired" || invite.status === "revoked") && (
+            <div className="text-center py-2">
+              <span
+                className="font-display text-base font-black uppercase tracking-tight"
+                style={{ color: "#E53935" }}
+              >
+                {invite.status === "expired" ? "Expired" : "Revoked"}
+              </span>
+              <p className="font-body text-sm text-[var(--artemis-charcoal)] mt-1">
+                This invite is no longer available.
+              </p>
+            </div>
+          )}
+        </div>
       </div>
     </main>
+  );
+}
+
+function TermChip({ label, value, accent }: { label: string; value: string; accent?: boolean }) {
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        flexDirection: "column",
+        alignItems: "center",
+        padding: "8px 16px",
+        border: "2px solid #000",
+        borderRadius: "10px",
+        background: accent ? "#E53935" : "#fff",
+        color: accent ? "#fff" : "#000",
+        boxShadow: "3px 3px 0 0 #1565C0",
+      }}
+    >
+      <span
+        style={{
+          fontFamily: "var(--font-display)",
+          fontSize: "20px",
+          fontWeight: 900,
+          lineHeight: 1,
+          letterSpacing: "-0.02em",
+        }}
+      >
+        {value}
+      </span>
+      <span
+        style={{
+          fontFamily: "var(--font-label)",
+          fontSize: "8px",
+          fontWeight: 900,
+          textTransform: "uppercase",
+          letterSpacing: "0.15em",
+          marginTop: "4px",
+          opacity: 0.7,
+        }}
+      >
+        {label}
+      </span>
+    </div>
   );
 }

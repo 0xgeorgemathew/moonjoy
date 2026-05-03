@@ -336,10 +336,11 @@ async function buildLiveData(
 
   const mandatoryWindows = buildMandatoryWindows(match);
 
-  const viewerPortfolio = await buildPortfolioView(match.id, viewerAgentId, match.startingCapitalUsd);
-  const opponentAgentId = match.viewerSeat === "creator" ? match.opponent?.agentId ?? null : match.creator.agentId;
-  const opponentPortfolio = opponentAgentId
-    ? await buildPortfolioView(match.id, opponentAgentId, match.startingCapitalUsd)
+  // Fetch portfolios by seat, not by viewer perspective
+  // This ensures each panel always shows the correct agent's valuation
+  const creatorPortfolio = await buildPortfolioView(match.id, match.creator.agentId, match.startingCapitalUsd);
+  const opponentPortfolio = match.opponent
+    ? await buildPortfolioView(match.id, match.opponent.agentId, match.startingCapitalUsd)
     : null;
 
   return {
@@ -351,7 +352,7 @@ async function buildLiveData(
     mandatoryWindowResults: windowResults,
     trades: enrichedTrades,
     leaderboard,
-    viewerPortfolio,
+    creatorPortfolio,
     opponentPortfolio,
     allowedTokens: allowedTokens.map((t: TokenInfo) => ({
       address: t.address,
@@ -369,7 +370,7 @@ async function loadEnrichedTrades(
 ): Promise<EnrichedTrade[]> {
   const { data: trades } = await supabase
     .from("simulated_trades")
-    .select("id, agent_id, seat, phase, token_in, token_out, amount_in, quoted_amount_out, simulated_amount_out, slippage_bps, quote_snapshot_id, status, failure_reason, accepted_at")
+    .select("id, agent_id, seat, phase, token_in, token_out, amount_in, quoted_amount_out, simulated_amount_out, slippage_bps, quote_snapshot_id, status, failure_reason, accepted_at, trade_side, realized_pnl_usd, closed_cost_basis_usd, input_value_usd, output_value_usd, retryable")
     .eq("match_id", matchId)
     .order("accepted_at", { ascending: true });
 
@@ -379,7 +380,7 @@ async function loadEnrichedTrades(
     .map((t) => t.quote_snapshot_id as string)
     .filter(Boolean);
 
-  let quoteMap: Record<string, Record<string, unknown>> = {};
+  const quoteMap: Record<string, Record<string, unknown>> = {};
   if (quoteSnapshotIds.length > 0) {
     const { data: quotes } = await supabase
       .from("quote_snapshots")
@@ -416,6 +417,12 @@ async function loadEnrichedTrades(
       quotedAmountOut: row.quoted_amount_out as string,
       simulatedAmountOut: row.simulated_amount_out as string,
       slippageBps: row.slippage_bps as number,
+      tradeSide: (row.trade_side ?? null) as "buy" | "sell" | "swap" | "exit" | null,
+      realizedPnlUsd: row.realized_pnl_usd == null ? null : Number(row.realized_pnl_usd),
+      closedCostBasisUsd: row.closed_cost_basis_usd == null ? null : Number(row.closed_cost_basis_usd),
+      inputValueUsd: row.input_value_usd == null ? null : Number(row.input_value_usd),
+      outputValueUsd: row.output_value_usd == null ? null : Number(row.output_value_usd),
+      retryable: Boolean(row.retryable ?? true),
       status: row.status as "accepted" | "rejected",
       failureReason: row.failure_reason as string | null,
       acceptedAt: row.accepted_at as string,
@@ -512,6 +519,10 @@ async function buildPortfolioView(
     decimals: number;
     amountBaseUnits: string;
     valueUsd: number;
+    costBasisUsd?: number;
+    unrealizedPnlUsd?: number;
+    exitableAmountBaseUnits?: string;
+    exposurePercent?: number;
     priceSource: string;
     quoteId: string | null;
   }>;
@@ -534,6 +545,10 @@ async function buildPortfolioView(
       amountBaseUnits: b.amountBaseUnits,
       symbol: b.symbol ?? "",
       valueUsd: b.valueUsd ?? 0,
+      costBasisUsd: b.costBasisUsd ?? 0,
+      unrealizedPnlUsd: b.unrealizedPnlUsd ?? 0,
+      exitableAmountBaseUnits: b.exitableAmountBaseUnits ?? b.amountBaseUnits,
+      exposurePercent: b.exposurePercent ?? 0,
     })),
   };
 }
